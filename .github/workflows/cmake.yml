@@ -64,7 +64,7 @@ jobs:
     - name: Copy VST3 to Standalone folder
       shell: bash
       run: | 
-        cp "${{ github.workspace }}/build/plugin/AudioPlugin_artefacts/${{ matrix.build_type }}/VST3/${{ env.APP_NAME }}.vst3" \
+        cp -r "${{ github.workspace }}/build/plugin/AudioPlugin_artefacts/${{ matrix.build_type }}/VST3/${{ env.APP_NAME }}.vst3" \
           "${{ github.workspace }}/build/plugin/AudioPlugin_artefacts/${{ matrix.build_type }}/Standalone/${{ env.APP_NAME }}.vst3"
 
     - name: Create dmg installer
