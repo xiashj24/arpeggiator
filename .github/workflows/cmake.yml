@@ -73,13 +73,12 @@ jobs:
         brew install create-dmg
         create-dmg \
           ${{github.workspace}}/build/plugin/AudioPlugin_artefacts/${{matrix.build_type}}/Standalone/${{ env.APP_NAME }}.dmg \
-          ${{github.workspace}}/build/plugin/AudioPlugin_artefacts/${{matrix.build_type}}/Standalone/${{ env.APP_NAME }}.app \
-          ${{github.workspace}}/build/plugin/AudioPlugin_artefacts/${{matrix.build_type}}/Standalone/${{ env.APP_NAME }}.vst3 \
+          ${{github.workspace}}/build/plugin/AudioPlugin_artefacts/${{matrix.build_type}}/Standalone \
           --hide-extension ${{ env.APP_NAME }}.app \
           --window-size 600 600 \
           --app-drop-link 300 300
         rm -rf ${{github.workspace}}/build/plugin/AudioPlugin_artefacts/${{matrix.build_type}}/Standalone/${{ env.APP_NAME }}.app \
-          ${{github.workspace}}/build/plugin/AudioPlugin_artefacts/${{matrix.build_type}}/Standalone/${{ env.APP_NAME }}.vst3 \
+          ${{github.workspace}}/build/plugin/AudioPlugin_artefacts/${{matrix.build_type}}/Standalone/${{ env.APP_NAME }}.vst3
 
     - name: Upload Build Artifacts
       uses: actions/upload-artifact@v4
