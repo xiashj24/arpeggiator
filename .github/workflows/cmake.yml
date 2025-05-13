@@ -62,9 +62,10 @@ jobs:
       run: ctest -C ${{ matrix.build_type }}
     
     - name: Copy VST3 to Standalone folder
-      run:
-        cp ${{github.workspace}}/build/plugin/AudioPlugin_artefacts/${{matrix.build_type}}/VST3/${{ env.APP_NAME }}.vst3 \
-          ${{github.workspace}}/build/plugin/AudioPlugin_artefacts/${{matrix.build_type}}/Standalone/${{ env.APP_NAME }}.vst3
+      shell: bash
+      run: | 
+        cp "${{ github.workspace }}/build/plugin/AudioPlugin_artefacts/${{ matrix.build_type }}/VST3/${{ env.APP_NAME }}.vst3" \
+          "${{ github.workspace }}/build/plugin/AudioPlugin_artefacts/${{ matrix.build_type }}/Standalone/${{ env.APP_NAME }}.vst3"
 
     - name: Create dmg installer
       if: matrix.os == 'macos-15' || matrix.os == 'macos-14'
