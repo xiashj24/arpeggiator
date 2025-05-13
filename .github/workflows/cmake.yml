@@ -5,13 +5,18 @@ on:
     branches: [ "main" ]
   pull_request:
     branches: [ "main" ]
+  workflow_dispatch:
+
+env:
+  APP_NAME: "PolyArp"
+
 
 jobs:
   build:
     strategy:
       matrix:
-        os: [macos-14, windows-latest]
-        build_type: [Debug, Release]
+        os: [macos-14, macos-15, windows-latest]
+        build_type: [Release]
 
     # The CMake configure and build commands are platform agnostic and should work equally well on Windows or Mac.
     # You can convert this to a matrix build if you need cross-platform coverage.
@@ -20,24 +25,31 @@ jobs:
 
     steps:
     - name: List Xcode installations
-      if: matrix.os == 'macos-14'
+      if: matrix.os == 'macos-15'
       run: sudo ls -1 /Applications | grep "Xcode"
-    - name: Select Xcode 16.2
+
+    - name: Select Xcode 15
       if: matrix.os == 'macos-14'
-      run: sudo xcode-select -s /Applications/Xcode_16.2.0.app/Contents/Developer
+      run: sudo xcode-select -s /Applications/Xcode_15.4.app/Contents/Developer
+
+    - name: Select Xcode 16
+      if: matrix.os == 'macos-15'
+      run: sudo xcode-select -s /Applications/Xcode_16.app/Contents/Developer
     - uses: actions/checkout@v4
 
-    - name: Cache dependencies
-      id: cache-libs
-      uses: actions/cache@v4
-      with:
-        path: ${{github.workspace}}
-        key: libs
+    # note: this is not improving build time, disable for now
+    # - name: Cache dependencies
+    #   id: cache-libs
+    #   uses: actions/cache@v4
+    #   with:
+    #     path: ${{github.workspace}}/libs
+    #     key: libs
 
     - name: Configure CMake
       # Configure CMake in a 'build' subdirectory. `CMAKE_BUILD_TYPE` is only required if you are using a single-configuration generator such as make.
       # See https://cmake.org/cmake/help/latest/variable/CMAKE_BUILD_TYPE.html?highlight=cmake_build_type
-      run: cmake -S . -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+      run: |
+        cmake -S . -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64"
 
     - name: Build
       # Build your program with the given configuration
@@ -48,4 +60,29 @@ jobs:
       # Execute tests defined by the CMake configuration.
       # See https://cmake.org/cmake/help/latest/manual/ctest.1.html for more detail
       run: ctest -C ${{ matrix.build_type }}
+    
+    - name: Copy VST3 to Standalone folder
+      run:
+        cp ${{github.workspace}}/build/plugin/AudioPlugin_artefacts/${{matrix.build_type}}/VST3/${{ env.APP_NAME }}.vst3 \
+          ${{github.workspace}}/build/plugin/AudioPlugin_artefacts/${{matrix.build_type}}/Standalone/${{ env.APP_NAME }}.vst3
 
+    - name: Create dmg installer
+      if: matrix.os == 'macos-15' || matrix.os == 'macos-14'
+      run: |
+        brew install create-dmg
+        create-dmg \
+          ${{github.workspace}}/build/plugin/AudioPlugin_artefacts/${{matrix.build_type}}/Standalone/${{ env.APP_NAME }}.dmg \
+          ${{github.workspace}}/build/plugin/AudioPlugin_artefacts/${{matrix.build_type}}/Standalone/${{ env.APP_NAME }}.app \
+          ${{github.workspace}}/build/plugin/AudioPlugin_artefacts/${{matrix.build_type}}/Standalone/${{ env.APP_NAME }}.vst3 \
+          --hide-extension ${{ env.APP_NAME }}.app \
+          --window-size 600 600 \
+          --app-drop-link 300 300
+        rm -rf ${{github.workspace}}/build/plugin/AudioPlugin_artefacts/${{matrix.build_type}}/Standalone/${{ env.APP_NAME }}.app
+          ${{github.workspace}}/build/plugin/AudioPlugin_artefacts/${{matrix.build_type}}/Standalone/${{ env.APP_NAME }}.vst3 \
+
+    - name: Upload Build Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{matrix.os}}-${{matrix.build_type}}
+        path: ${{github.workspace}}/build/plugin/AudioPlugin_artefacts/${{matrix.build_type}}/Standalone
+        retention-days: 30
