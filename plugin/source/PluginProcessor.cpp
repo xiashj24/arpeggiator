@@ -11,7 +11,9 @@ AudioPluginAudioProcessor::AudioPluginAudioProcessor()
 #endif
               .withOutput("Output", juce::AudioChannelSet::stereo(), true)
 #endif
-      ) {
+              ),
+      polyarp(arpMidiCollector),
+      lastCallbackTime(0.0) {
 }
 
 AudioPluginAudioProcessor::~AudioPluginAudioProcessor() {}
@@ -77,6 +79,9 @@ void AudioPluginAudioProcessor::prepareToPlay(double sampleRate,
   // Use this method as the place to do any pre-playback
   // initialisation that you need..
   juce::ignoreUnused(sampleRate, samplesPerBlock);
+
+  // MARK: initialization
+  arpMidiCollector.reset(sampleRate);
 }
 
 void AudioPluginAudioProcessor::releaseResources() {
@@ -116,6 +121,10 @@ void AudioPluginAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer,
   auto totalNumInputChannels = getTotalNumInputChannels();
   auto totalNumOutputChannels = getTotalNumOutputChannels();
 
+  // MARK: arp logic
+  double deltaTime = buffer.getNumSamples() / getSampleRate();
+  polyarp.process(deltaTime);
+
   // In case we have more outputs than inputs, this code clears any output
   // channels that didn't contain input data, (because these aren't
   // guaranteed to be empty - they may contain garbage).
@@ -136,6 +145,57 @@ void AudioPluginAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer,
     juce::ignoreUnused(channelData);
     // ..do something to the data...
   }
+
+  // MARK: process MIDI
+  for (const auto metadata : midiMessages) {
+    auto message = metadata.getMessage();
+    auto time_stamp_in_seconds =
+        message.getTimeStamp() / getSampleRate() + lastCallbackTime;
+
+    if (message.isNoteOn()) {
+      message.setTimeStamp(time_stamp_in_seconds);
+      polyarp.handleNoteOn(message);
+    } else if (message.isNoteOff()) {
+      message.setTimeStamp(time_stamp_in_seconds);
+      polyarp.handleNoteOff(message);
+    }
+  }
+
+  lastCallbackTime = juce::Time::getMillisecondCounterHiRes() * 0.001;
+
+  // generate MIDI start/stop/continue messages by querying DAW transport
+  // also set bpm
+  if (this->wrapperType ==
+      juce::AudioProcessor::WrapperType::wrapperType_VST3) {
+    if (auto dawPlayHead = getPlayHead()) {
+      if (auto positionInfo = dawPlayHead->getPosition()) {
+        polyarp.setBpm(positionInfo->getBpm().orFallback(120.0));
+
+        // TODO: enable/disable arp here, and make sure arp snap'd to DAW
+        // sequencer grid if (positionInfo->getIsPlaying()) {
+        //   if (!sequencer.isRunning())
+        //     sequencer.start(juce::Time::getMillisecondCounterHiRes() *
+        //     0.001);
+        // } else {
+        //   if (sequencer.isRunning())
+        //     sequencer.stop();
+        // }
+      }
+    }
+  }
+
+  // discard input MIDI messages if arp is enabled
+  if (polyarp.isRunning()) {
+    midiMessages.clear();
+  }
+
+  // TODO: merge MIDI from seq and keyboard using a separate VoiceAssigner
+  // module
+  // overwrite MIDI buffer
+  arpMidiCollector.removeNextBlockOfMessages(midiMessages, getBlockSize());
+  // guiMidiCollector.removeNextBlockOfMessages(midiMessages, getBlockSize());
+  // visualize MIDI in all channels and manual trigger
+  keyboardState.processNextMidiBuffer(midiMessages, 0, getBlockSize(), true);
 }
 
 bool AudioPluginAudioProcessor::hasEditor() const {

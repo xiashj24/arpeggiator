@@ -2,6 +2,8 @@
 
 #include "PluginProcessor.h"
 
+#include <juce_audio_utils/juce_audio_utils.h>  // juce::MidiKeyboardComponent
+
 namespace audio_plugin {
 
 class AudioPluginAudioProcessorEditor : public juce::AudioProcessorEditor {
@@ -16,6 +18,8 @@ private:
   // This reference is provided as a quick way for your editor to
   // access the processor object that created it.
   AudioPluginAudioProcessor& processorRef;
+
+  juce::MidiKeyboardComponent onScreenKeyboard;
 
   JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AudioPluginAudioProcessorEditor)
 };

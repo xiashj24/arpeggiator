@@ -4,11 +4,16 @@
 namespace audio_plugin {
 AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(
     AudioPluginAudioProcessor& p)
-    : AudioProcessorEditor(&p), processorRef(p) {
+    : AudioProcessorEditor(&p),
+      processorRef(p),
+      onScreenKeyboard(p.keyboardState,
+                       juce::MidiKeyboardComponent::horizontalKeyboard) {
   juce::ignoreUnused(processorRef);
   // Make sure that before the constructor has finished, you've set the
   // editor's size to whatever you need it to be.
-  setSize(400, 300);
+  setSize(800, 600);
+
+  addAndMakeVisible(onScreenKeyboard);
 }
 
 AudioPluginAudioProcessorEditor::~AudioPluginAudioProcessorEditor() {}
@@ -19,14 +24,16 @@ void AudioPluginAudioProcessorEditor::paint(juce::Graphics& g) {
   g.fillAll(
       getLookAndFeel().findColour(juce::ResizableWindow::backgroundColourId));
 
-  g.setColour(juce::Colours::white);
-  g.setFont(15.0f);
-  g.drawFittedText("Hello World!", getLocalBounds(),
-                   juce::Justification::centred, 1);
+  // g.setColour(juce::Colours::white);
+  // g.setFont(15.0f);
+  // g.drawFittedText("Hello World!", getLocalBounds(),
+  //                  juce::Justification::centred, 1);
 }
 
 void AudioPluginAudioProcessorEditor::resized() {
   // This is generally where you'll want to lay out the positions of any
   // subcomponents in your editor..
+  auto bounds = getBounds();
+  onScreenKeyboard.setBounds(bounds.removeFromBottom(90));
 }
 }  // namespace audio_plugin
