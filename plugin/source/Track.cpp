@@ -78,6 +78,7 @@ void Track::tick() {
     // render the step just right before it's too late
     if (tick_ == getStepRenderTick(index)) {
       renderStep(index);
+      // DBG("tick: " << tick_);
     }
 
     // send current tick's MIDI events
@@ -121,10 +122,12 @@ void Track::tick() {
   // update track length on beat
   if (tick_ % getTicksPerStep() == getTicksHalfStep()) {
     trackLength_ = trackLengthDeferred_;
+    // DBG("Track Legnth: " << trackLength_);
   }
 
-  if (tick_ == trackLength_ * getTicksPerStep() - getTicksHalfStep()) {
-    tick_ = -getTicksHalfStep();
+  if (tick_ >= trackLength_ * getTicksPerStep() - getTicksHalfStep()) {
+    // tick_ = -getTicksHalfStep();
+    tick_ -= trackLength_ * getTicksPerStep();
 
     midiQueue_.addTimeToMessages(-trackLength_ * getTicksPerStep());
 

@@ -95,7 +95,7 @@ public:
 
   int getTicksHalfStep() const { return getTicksPerStep() / 2; }
 
-  // for GUI to show playhead position, TODO: make return value fractional
+  // TODO: make return value fractional? (for GUI)
   int getCurrentStepIndex() const;
 
   // TODO: track utilities (randomize, humanize, rotate, Euclidean, Grids,

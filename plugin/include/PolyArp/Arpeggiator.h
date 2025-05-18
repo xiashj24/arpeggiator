@@ -95,7 +95,7 @@ private:
     int num_notes_pressed = keyboardRef.getNumNotesPressed();
     int seq_length = num_notes_pressed;
 
-    DBG("index: " << index);
+    
 
     auto note_stack = keyboardRef.getNoteStack();
 
@@ -199,6 +199,8 @@ private:
       default:
         break;
     }
+
+    DBG("index: " << index << " note: " << arp_note.number);
 
     setLengthDeferred(seq_length);
 
