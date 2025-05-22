@@ -4,7 +4,8 @@
 #include "PolyArp/PolyArp.h"
 
 namespace audio_plugin {
-class AudioPluginAudioProcessor : public juce::AudioProcessor {
+class AudioPluginAudioProcessor : public juce::AudioProcessor,
+                                  private juce::HighResolutionTimer {
 public:
   AudioPluginAudioProcessor();
   ~AudioPluginAudioProcessor() override;
@@ -27,6 +28,18 @@ public:
   bool isMidiEffect() const override;
   double getTailLengthSeconds() const override;
 
+  void setBypassed(bool shouldBypass) {
+    if (shouldBypass && !bypassed) {
+      polyarp.stop();
+    }
+    if (!shouldBypass && bypassed) {
+      keyboardState.allNotesOff(0);
+    }
+    bypassed = shouldBypass;
+  }
+
+  bool isBypassed() const { return bypassed.load(); }
+
   int getNumPrograms() override;
   int getCurrentProgram() override;
   void setCurrentProgram(int index) override;
@@ -36,12 +49,28 @@ public:
   void getStateInformation(juce::MemoryBlock& destData) override;
   void setStateInformation(const void* data, int sizeInBytes) override;
 
+  void hiResTimerCallback() override final;
+
   Sequencer::PolyArp polyarp;
 
   juce::MidiKeyboardState keyboardState;  // MIDI visualizer
+
+  juce::AudioProcessorValueTreeState parameters;
+  juce::UndoManager undoManager;
+
 private:
+  juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
+
+  std::atomic<float>* arpTypeParam = nullptr;
+  std::atomic<float>* arpOctaveParam = nullptr;
+  std::atomic<float>* arpGateParam = nullptr;
+  std::atomic<float>* arpResolutionParam = nullptr;
+
+  std::atomic<float>* arpBypassParam = nullptr;
+
   juce::MidiMessageCollector arpMidiCollector;
   double lastCallbackTime;
+  std::atomic<bool> bypassed;
 
   JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AudioPluginAudioProcessor)
 };

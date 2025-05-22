@@ -27,7 +27,7 @@ public:
       : bpm_(BPM_DEFAULT),
         timeSinceStart_(0.0),
         startTime_(0.0),
-        arp_(1, keyboardState_),
+        arp_(1),
         midiCollector_(midiCollector) {
     arp_.setEnabled(false);  // note: track should be disabled by default
 
@@ -47,44 +47,44 @@ public:
   void setBpm(double BPM) { bpm_ = BPM; }
   double getBpm() const { return bpm_; }
 
-  void panic() {
-    auto msg = juce::MidiMessage::allNotesOff(1);
-    msg.setTimeStamp(juce::Time::getMillisecondCounterHiRes() * 0.001);
-    midiCollector_.addMessageToQueue(msg);
-  }
+  // void panic() {
+  //   auto msg = juce::MidiMessage::allNotesOff(1);
+  //   msg.setTimeStamp(juce::Time::getMillisecondCounterHiRes() * 0.001);
+  //   midiCollector_.addMessageToQueue(msg);
+  // }
 
   void start(double startTime) {
     arp_.setEnabled(true);
     timeSinceStart_ = 0.0;
     startTime_ = startTime;
-    arp_.reset();
-  }
-
-  void stop() {
-    arp_.setEnabled(false);
-    panic();
+    arp_.reset(-0.5f);  // start a bit later to catch all notes in a chord
   }
 
   bool isRunning() const { return arp_.isEnabled(); }
 
   void handleNoteOn(juce::MidiMessage noteOn) {
-    // maintain keyboard state
-    keyboardState_.handleNoteOn(noteOn);
+    arp_.handleNoteOn(noteOn);
 
+    // note: can also wait for incoming clock to start
     if (!arp_.isEnabled()) {
-      start(juce::Time::getMillisecondCounterHiRes() *
-            0.001);  // is this the right place to call it??
+      start(juce::Time::getMillisecondCounterHiRes() * 0.001);
     }
   }
 
-  void handleNoteOff(juce::MidiMessage noteOff) {
-    // maintain keyboard state
-    keyboardState_.handleNoteOff(noteOff);
+  void stop() { arp_.stop(); }
 
-    if (keyboardState_.getNumNotesPressed() == 0) {
-      stop();
+  void setLatch(bool enabled) {
+    if (enabled) {
+      arp_.setLatchOn();
+    } else {
+      arp_.setLatchOff();
     }
   }
+
+  Arpeggiator& getArp() { return arp_; }
+
+  // automatically stoppedd when all notes are off
+  void handleNoteOff(juce::MidiMessage noteOff) { arp_.handleNoteOff(noteOff); }
 
   // deltaTime is in seconds, call this frequenctly, preferably over 1kHz
   void process(double deltaTime) {
@@ -110,7 +110,6 @@ private:
   double timeSinceStart_;
   double startTime_;
 
-  KeyboardState keyboardState_;
   Arpeggiator arp_;
 
   juce::MidiMessageCollector& midiCollector_;

@@ -1,6 +1,8 @@
 #include "PolyArp/PluginProcessor.h"
 #include "PolyArp/PluginEditor.h"
 
+#define HIRES_TIMER_INTERVAL_MS 1
+
 namespace audio_plugin {
 AudioPluginAudioProcessor::AudioPluginAudioProcessor()
     : AudioProcessor(
@@ -13,10 +15,60 @@ AudioPluginAudioProcessor::AudioPluginAudioProcessor()
 #endif
               ),
       polyarp(arpMidiCollector),
-      lastCallbackTime(0.0) {
+      parameters(*this, &undoManager, "PolyArp", createParameterLayout()),
+      lastCallbackTime(0.0),
+      bypassed(false) {
+
+  arpTypeParam = parameters.getRawParameterValue("ARP_TYPE");
+  arpOctaveParam = parameters.getRawParameterValue("ARP_OCTAVE");
+  arpGateParam = parameters.getRawParameterValue("ARP_GATE");
+  arpResolutionParam = parameters.getRawParameterValue("ARP_RESOLUTION");
+  arpBypassParam = parameters.getRawParameterValue("ARP_BYPASS");
+
+  HighResolutionTimer::startTimer(HIRES_TIMER_INTERVAL_MS);
 }
 
-AudioPluginAudioProcessor::~AudioPluginAudioProcessor() {}
+// MARK: parameter layout
+juce::AudioProcessorValueTreeState::ParameterLayout
+AudioPluginAudioProcessor::createParameterLayout() {
+  using namespace juce;
+  AudioProcessorValueTreeState::ParameterLayout layout;
+
+  // Arpeggiator Type
+  StringArray arpTypeChoices{
+      "Manual",     "Rise",         "Fall",    "Rise Fall", "Rise N' Fall",
+      "Fall Rise",  "Fall N' Rise", "Shuffle", "Walk",      "Random",
+      "Random Two", "Random Three", "Chord"};
+  layout.add(std::make_unique<AudioParameterChoice>("ARP_TYPE", "Arp Type",
+                                                    arpTypeChoices, 0));
+
+  // Octave (1-4)
+  layout.add(
+      std::make_unique<AudioParameterInt>("ARP_OCTAVE", "Octave", 1, 4, 1));
+
+  // Gate (0.0 to 2.0)
+  layout.add(std::make_unique<AudioParameterFloat>(
+      "ARP_GATE", "Gate", NormalisableRange<float>(0.0f, 2.0f, 0.01f),
+      DEFAULT_LENGTH));
+
+  // Resolution
+  StringArray resolutionChoices{"1/32", "1/16", "1/8",  "1/4",
+                                "1/2T", "1/4T", "1/8T", "1/16T"};
+
+  layout.add(std::make_unique<AudioParameterChoice>(
+      "ARP_RESOLUTION", "Resolution", resolutionChoices, 2));
+
+  layout.add(
+      std::make_unique<juce::AudioParameterBool>("ARP_LATCH", "Latch", false));
+  layout.add(std::make_unique<juce::AudioParameterBool>("ARP_BYPASS", "Bypass",
+                                                        false));
+
+  return layout;
+}
+
+AudioPluginAudioProcessor::~AudioPluginAudioProcessor() {
+  HighResolutionTimer::stopTimer();
+}
 
 const juce::String AudioPluginAudioProcessor::getName() const {
   return JucePlugin_Name;
@@ -80,7 +132,6 @@ void AudioPluginAudioProcessor::prepareToPlay(double sampleRate,
   // initialisation that you need..
   juce::ignoreUnused(sampleRate, samplesPerBlock);
 
-  // MARK: initialization
   arpMidiCollector.reset(sampleRate);
 }
 
@@ -113,6 +164,27 @@ bool AudioPluginAudioProcessor::isBusesLayoutSupported(
 #endif
 }
 
+void AudioPluginAudioProcessor::hiResTimerCallback() {
+  // MARK: arp logic
+  constexpr double deltaTime = HIRES_TIMER_INTERVAL_MS / 1000.0;
+
+  auto arp_type =
+      static_cast<Sequencer::Arpeggiator::ArpType>(arpTypeParam->load());
+  int octave = static_cast<int>(arpOctaveParam->load());
+  float gate = arpGateParam->load();
+  auto resolution =
+      static_cast<Sequencer::Track::Resolution>(arpResolutionParam->load());
+  bool bypass = static_cast<bool>(arpBypassParam->load());
+
+  polyarp.getArp().setType(arp_type);
+  polyarp.getArp().setOctave(octave);
+  polyarp.getArp().setGate(gate);
+  polyarp.getArp().setResolutionDeferred(resolution);
+  this->setBypassed(bypass);
+
+  polyarp.process(deltaTime);
+}
+
 void AudioPluginAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer,
                                              juce::MidiBuffer& midiMessages) {
   juce::ignoreUnused(midiMessages);
@@ -120,10 +192,6 @@ void AudioPluginAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer,
   juce::ScopedNoDenormals noDenormals;
   auto totalNumInputChannels = getTotalNumInputChannels();
   auto totalNumOutputChannels = getTotalNumOutputChannels();
-
-  // MARK: arp logic
-  double deltaTime = buffer.getNumSamples() / getSampleRate();
-  polyarp.process(deltaTime);
 
   // In case we have more outputs than inputs, this code clears any output
   // channels that didn't contain input data, (because these aren't
@@ -147,17 +215,20 @@ void AudioPluginAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer,
   }
 
   // MARK: process MIDI
-  for (const auto metadata : midiMessages) {
-    auto message = metadata.getMessage();
-    auto time_stamp_in_seconds =
-        message.getTimeStamp() / getSampleRate() + lastCallbackTime;
 
-    if (message.isNoteOn()) {
-      message.setTimeStamp(time_stamp_in_seconds);
-      polyarp.handleNoteOn(message);
-    } else if (message.isNoteOff()) {
-      message.setTimeStamp(time_stamp_in_seconds);
-      polyarp.handleNoteOff(message);
+  if (!bypassed) {
+    for (const auto metadata : midiMessages) {
+      auto message = metadata.getMessage();
+      auto time_stamp_in_seconds =
+          message.getTimeStamp() / getSampleRate() + lastCallbackTime;
+
+      if (message.isNoteOn()) {
+        message.setTimeStamp(time_stamp_in_seconds);
+        polyarp.handleNoteOn(message);
+      } else if (message.isNoteOff()) {
+        message.setTimeStamp(time_stamp_in_seconds);
+        polyarp.handleNoteOff(message);
+      }
     }
   }
 
@@ -171,7 +242,7 @@ void AudioPluginAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer,
       if (auto positionInfo = dawPlayHead->getPosition()) {
         polyarp.setBpm(positionInfo->getBpm().orFallback(120.0));
 
-        // TODO: enable/disable arp here, and make sure arp snap'd to DAW
+        // TODO: start arp here, and make sure arp sync'd to DAW
         // sequencer grid if (positionInfo->getIsPlaying()) {
         //   if (!sequencer.isRunning())
         //     sequencer.start(juce::Time::getMillisecondCounterHiRes() *
@@ -211,7 +282,12 @@ void AudioPluginAudioProcessor::getStateInformation(
   // You should use this method to store your parameters in the memory block.
   // You could do that either as raw data, or use the XML or ValueTree classes
   // as intermediaries to make it easy to save and load complex data.
-  juce::ignoreUnused(destData);
+  if (this->wrapperType ==
+      juce::AudioProcessor::WrapperType::wrapperType_Standalone)
+    return;  // only recall parameters if run inside a DAW
+  auto state = parameters.copyState();
+  std::unique_ptr<juce::XmlElement> xml(state.createXml());
+  copyXmlToBinary(*xml, destData);
 }
 
 void AudioPluginAudioProcessor::setStateInformation(const void* data,
@@ -219,7 +295,13 @@ void AudioPluginAudioProcessor::setStateInformation(const void* data,
   // You should use this method to restore your parameters from this memory
   // block, whose contents will have been created by the getStateInformation()
   // call.
-  juce::ignoreUnused(data, sizeInBytes);
+  std::unique_ptr<juce::XmlElement> xmlState(
+      getXmlFromBinary(data, sizeInBytes));
+  if (xmlState.get() != nullptr) {
+    if (xmlState->hasTagName(parameters.state.getType())) {
+      parameters.replaceState(juce::ValueTree::fromXml(*xmlState));
+    }
+  }
 }
 }  // namespace audio_plugin
 

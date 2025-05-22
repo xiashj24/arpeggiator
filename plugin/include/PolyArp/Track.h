@@ -1,4 +1,5 @@
 #pragma once
+#include "PolyArp/Note.h"
 #include "PolyArp/KeyboardState.h"
 #include <juce_audio_basics/juce_audio_basics.h>  // juce::MidiMessageSequence
 
@@ -18,49 +19,27 @@
 // TODO: make this a static const variable of TRACK
 #define STEP_SEQ_MAX_LENGTH 16  // TODO: test as large as 128
 #define STEP_SEQ_DEFAULT_LENGTH 16
-#define MAX_MOTION_SLOTS 8  // not used now
-
-#define DEFAULT_NOTE 60  // C4
-#define DISABLED_NOTE 20
-#define DEFAULT_VELOCITY 100  // 1..127 since 0 is the same as NoteOff
-#define DEFAULT_LENGTH 0.75f
 
 namespace Sequencer {
-
-struct Note {
-  int number = DEFAULT_NOTE;  // for now we use the convention that note number
-                              // <= 20 indicates disabled
-  int velocity = DEFAULT_VELOCITY;
-  float offset = 0.f;             // relative the step index
-  float length = DEFAULT_LENGTH;  // in (0, TrackLength]
-
-  void reset() {
-    number = DISABLED_NOTE;
-    velocity = DEFAULT_VELOCITY;
-    offset = 0.f;  // relative the step index
-    length = DEFAULT_LENGTH;
-  }
-};
 
 class Track {
 public:
   // mapped to ticks per step
   enum Resolution {
-    _32th = 12,
-    _16th = 24,  // default
-    _8th = 48,
-    _4th = 96,
-    _48th = 8,   // 1/16T
-    _24th = 16,  // 1/8T
-    _12th = 32,  // 1/4T
-    _6th = 64    // 1/2T
+    _32th,
+    _16th,
+    _8th,
+    _4th,
+    _6th,   // 1/2T
+    _12th,  // 1/4T
+    _24th,  // 1/8T
+    _48th,  // 1/16T
   };
 
   Track(int channel,
-        const KeyboardState& keyboard,
         int length = STEP_SEQ_DEFAULT_LENGTH,
         Resolution resolution = _16th)
-      : keyboardRef(keyboard),
+      :  // keyboardRef(keyboard),
         channel_(channel),
         trackLength_(length),
         trackLengthDeferred_(length),
@@ -82,20 +61,27 @@ public:
 
   void setResolution(Resolution resolution) { resolution_ = resolution; }
 
-  // caller should register a callback to receive MIDI messages
+  // callback to transfer MIDI messages (timestamp in ticks)
   std::function<void(juce::MidiMessage msg)> sendMidiMessage;
 
   // this function should be called (on average) {TICKS_PER_16TH} times per step
   // some amount of time jittering should be fine
   void tick();
 
-  void reset();  // for resync
+  void reset(float index = 0.f);  // for resync to master length
 
-  int getTicksPerStep() const { return static_cast<int>(resolution_); }
+  int getTicksPerStep() const {
+    static const int RESOLUTION_TICKS_TABLE[] = {12, 24, 48, 96, 64, 32, 16, 8};
+
+    return RESOLUTION_TICKS_TABLE[static_cast<int>(resolution_)];
+  }
 
   int getTicksHalfStep() const { return getTicksPerStep() / 2; }
 
-  // TODO: make return value fractional? (for GUI)
+  void sendNoteOffNow();
+
+  // for GUI
+  // float getCurrentStepFractional() const;
   int getCurrentStepIndex() const;
 
   // TODO: track utilities (randomize, humanize, rotate, Euclidean, Grids,
@@ -107,7 +93,7 @@ protected:
   // timestamp in ticks (not seconds or samples)
   void renderMidiMessage(juce::MidiMessage message);
 
-  const KeyboardState& keyboardRef;
+  // const KeyboardState& keyboardRef;
 
 private:
   int channel_;
@@ -118,27 +104,24 @@ private:
   int trackLengthDeferred_;
   Resolution resolution_;
 
-  // TODO: implement swing (should not affect roll)
+  // TODO: implement swing (should not affect roll through)
   [[maybe_unused]] float swing_;
-  [[maybe_unused]] bool resync_to_longest_track_;  // or master length?
+  [[maybe_unused]] int resetLength_;  // 0 means do not sync to resetLegnth
 
   bool enabled_;
 
   // function related variables
   int tick_;
 
-  // derived class must implement renderStep and getStepNoteRenderTick
+  // derived class must implement renderStep and getStepRenderTick
   virtual void renderStep(int index) = 0;
   virtual int getStepRenderTick(int index) const = 0;
 
   /*
-    MIDI buffer inspired by the endless scrolling background technique in
-    early arcade games
     invariant: MIDI messages are always sorted by timestamp
     note: when porting to Spark/Prologue, change from juce::MidiMessageSequence
     to a simpler data structure
   */
-
   juce::MidiMessageSequence midiQueue_, midiQueueNext_;
 };
 

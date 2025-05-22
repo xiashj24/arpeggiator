@@ -56,7 +56,6 @@ void Track::renderMidiMessage(juce::MidiMessage message) {
   // int tick = static_cast<int>(message.getTimeStamp());
 
   midiQueue_.addEvent(message);
-
   // if (tick < trackLength_ * getTicksPerStep() - getTicksHalfStep()) {
   //   firstRun_.addEvent(message);
 
@@ -66,9 +65,20 @@ void Track::renderMidiMessage(juce::MidiMessage message) {
   // }
 }
 
-void Track::reset() {
+void Track::reset(float index) {
   midiQueue_.clear();
-  tick_ = 0;
+  tick_ = static_cast<int>(getTicksPerStep() * index);
+}
+
+void Track::sendNoteOffNow() {
+  for (int i = midiQueue_.getNextIndexAtTime(tick_);
+       i < midiQueue_.getNumEvents(); ++i) {
+    auto message = midiQueue_.getEventPointer(i)->message;
+    if (message.isNoteOff()) {
+      message.setTimeStamp(tick_);  // +1?
+      sendMidiMessage(message);
+    }
+  }
 }
 
 void Track::tick() {
@@ -78,7 +88,7 @@ void Track::tick() {
     // render the step just right before it's too late
     if (tick_ == getStepRenderTick(index)) {
       renderStep(index);
-      // DBG("tick: " << tick_);
+      // DBG("step render tick: " << tick_);
     }
 
     // send current tick's MIDI events
@@ -119,7 +129,7 @@ void Track::tick() {
   // occasional missing note off, why?
   tick_ += 1;
 
-  // update track length on beat
+  // update track length at the end of each loop
   if (tick_ % getTicksPerStep() == getTicksHalfStep()) {
     trackLength_ = trackLengthDeferred_;
     // DBG("Track Legnth: " << trackLength_);
