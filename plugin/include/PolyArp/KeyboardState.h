@@ -16,10 +16,7 @@ class KeyboardState {
 public:
   KeyboardState() : lastChannel_(1) {}
 
-  // reports the MIDI channel of the last handled MIDI message handled
-  // if note midi message has been handled, it will return 0
-  // for now, we can safely assume that a keyboard will not switch channel in
-  // the middle of a note
+  // let's pray that the user will not switch channel in the middle of a note
   int getLastChannel() const { return lastChannel_; }
 
   void handleNoteOn(juce::MidiMessage noteOn) {
@@ -31,9 +28,6 @@ public:
 
   // returns the matching note on message
   juce::MidiMessage handleNoteOff(juce::MidiMessage noteOff) {
-    // auto note_on = noteOns_[noteOff.getNoteNumber()].value();
-    // noteOns_[noteOff.getNoteNumber()].reset();
-
     int note_number = noteOff.getNoteNumber();
 
     auto it = std::find(activeNoteStack_.begin(), activeNoteStack_.end(),

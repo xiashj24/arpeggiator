@@ -36,9 +36,9 @@ AudioPluginAudioProcessor::createParameterLayout() {
 
   // Arpeggiator Type
   StringArray arpTypeChoices{
-      "Manual",     "Rise",         "Fall",    "Rise Fall", "Rise N' Fall",
-      "Fall Rise",  "Fall N' Rise", "Shuffle", "Walk",      "Random",
-      "Random Two", "Random Three", "Chord"};
+      "Manual",    "Rise",         "Fall",    "Rise Fall", "Rise N' Fall",
+      "Fall Rise", "Fall N' Rise", "Shuffle", "Walk",      "Random 1",
+      "Random 2",  "Random 3",     "Chord"};
   layout.add(std::make_unique<AudioParameterChoice>("ARP_TYPE", "Arp Type",
                                                     arpTypeChoices, 0));
 
@@ -179,7 +179,7 @@ void AudioPluginAudioProcessor::hiResTimerCallback() {
   polyarp.getArp().setType(arp_type);
   polyarp.getArp().setOctave(octave);
   polyarp.getArp().setGate(gate);
-  polyarp.getArp().setResolutionDeferred(resolution);
+  polyarp.getArp().setResolution(resolution);
   this->setBypassed(bypass);
 
   polyarp.process(deltaTime);

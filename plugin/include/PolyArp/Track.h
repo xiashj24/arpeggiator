@@ -16,7 +16,7 @@
   :(
 */
 
-// TODO: make this a static const variable of TRACK
+// TODO: make this a static constexpr variable of TRACK(Part)
 #define STEP_SEQ_MAX_LENGTH 16  // TODO: test as large as 128
 #define STEP_SEQ_DEFAULT_LENGTH 16
 
@@ -36,36 +36,44 @@ public:
     _48th,  // 1/16T
   };
 
-  Track(int channel,
-        int length = STEP_SEQ_DEFAULT_LENGTH,
-        Resolution resolution = _16th)
-      :  // keyboardRef(keyboard),
-        channel_(channel),
+  Track(int channel, int length, Resolution resolution)
+      : channel_(channel),
         trackLength_(length),
-        trackLengthDeferred_(length),
+        trackLengthNew_(length),
         resolution_(resolution),
+        resolutionNew_(resolution),
         enabled_(true),
         tick_(0) {}
 
   virtual ~Track() = default;
 
-  void setEnabled(bool enabled) { enabled_ = enabled; }
+  void setEnabled(bool enabled) {
+    enabled_ = enabled;
+  }  // apply new resolution here?
 
-  // what's the use of this method. for runtime channel swithing?
+  // TODO: deprecate this
   void setChannel(int channel) { channel_ = channel; }
 
-  void setLengthDeferred(int length) { trackLengthDeferred_ = length; }
+  // do the same as setResolution?
+  void setLengthDeferred(int length) { trackLengthNew_ = length; }
   int getChannel() const { return channel_; }
   bool isEnabled() const { return enabled_; }
   int getLength() const { return trackLength_; }
 
-  void setResolution(Resolution resolution) { resolution_ = resolution; }
+  // if enabled, change will be applied at the start of the next loop
+  void setResolution(Resolution resolution) {
+    resolutionNew_ = resolution;
+
+    if (!isEnabled()) {
+      resolution_ = resolution;
+    }
+  }
 
   // callback to transfer MIDI messages (timestamp in ticks)
   std::function<void(juce::MidiMessage msg)> sendMidiMessage;
 
-  // this function should be called (on average) {TICKS_PER_16TH} times per step
-  // some amount of time jittering should be fine
+  // the manager of this class is responsible to call this function
+  // getTicksPerStep() times per step
   void tick();
 
   void reset(float index = 0.f);  // for resync to master length
@@ -81,7 +89,8 @@ public:
   void sendNoteOffNow();
 
   // for GUI
-  // float getCurrentStepFractional() const;
+  // float getProgress() const;
+
   int getCurrentStepIndex() const;
 
   // TODO: track utilities (randomize, humanize, rotate, Euclidean, Grids,
@@ -93,7 +102,7 @@ protected:
   // timestamp in ticks (not seconds or samples)
   void renderMidiMessage(juce::MidiMessage message);
 
-  // const KeyboardState& keyboardRef;
+  // const KeyboardState& keyboardRef; // removed
 
 private:
   int channel_;
@@ -101,8 +110,9 @@ private:
   // track parameters as seen by the user
 
   int trackLength_;
-  int trackLengthDeferred_;
+  int trackLengthNew_;
   Resolution resolution_;
+  Resolution resolutionNew_;
 
   // TODO: implement swing (should not affect roll through)
   [[maybe_unused]] float swing_;
@@ -120,7 +130,7 @@ private:
   /*
     invariant: MIDI messages are always sorted by timestamp
     note: when porting to Spark/Prologue, change from juce::MidiMessageSequence
-    to a simpler data structure
+    to a simpler data structure (FIFO queue)
   */
   juce::MidiMessageSequence midiQueue_, midiQueueNext_;
 };

@@ -2,6 +2,8 @@
 
 namespace Sequencer {
 
+// TODO: test changing length on the fly in sequencer
+
 int Track::getCurrentStepIndex() const {
   return (tick_ + getTicksHalfStep()) / getTicksPerStep();
 }
@@ -19,8 +21,6 @@ void Track::renderNote(int index, Note note) {
   // search all midi messages after note_on_tick
   // if there is a note off with the same note number
   // delete that and insert a new note off at note_on_tick
-  // Can I simply this code with updateMatchPairs?
-
   bool note_off_deleted = false;
   for (int i = midiQueue_.getNextIndexAtTime(tick_);
        i < midiQueue_.getNumEvents(); ++i) {
@@ -51,23 +51,16 @@ void Track::renderNote(int index, Note note) {
   renderMidiMessage(note_off_message);
 }
 
-// insert a future MIDI message into the MIDI buffer based on its timestamp
+// insert a future MIDI message into MIDI queue
 void Track::renderMidiMessage(juce::MidiMessage message) {
-  // int tick = static_cast<int>(message.getTimeStamp());
-
   midiQueue_.addEvent(message);
-  // if (tick < trackLength_ * getTicksPerStep() - getTicksHalfStep()) {
-  //   firstRun_.addEvent(message);
-
-  // } else {
-  //   message.setTimeStamp(tick - trackLength_ * getTicksPerStep());
-  //   secondRun_.addEvent(message);
-  // }
 }
 
 void Track::reset(float index) {
+  sendNoteOffNow();
   midiQueue_.clear();
   tick_ = static_cast<int>(getTicksPerStep() * index);
+  resolution_ = resolutionNew_; // necessary?
 }
 
 void Track::sendNoteOffNow() {
@@ -75,7 +68,9 @@ void Track::sendNoteOffNow() {
        i < midiQueue_.getNumEvents(); ++i) {
     auto message = midiQueue_.getEventPointer(i)->message;
     if (message.isNoteOff()) {
-      message.setTimeStamp(tick_);  // +1?
+      // note: even without this code, the note offs appear to be send out
+      // immediately in JUCE
+      message.setTimeStamp(tick_);
       sendMidiMessage(message);
     }
   }
@@ -88,7 +83,6 @@ void Track::tick() {
     // render the step just right before it's too late
     if (tick_ == getStepRenderTick(index)) {
       renderStep(index);
-      // DBG("step render tick: " << tick_);
     }
 
     // send current tick's MIDI events
@@ -96,9 +90,10 @@ void Track::tick() {
          i < midiQueue_.getNextIndexAtTime(tick_ + 1); ++i) {
       auto message = midiQueue_.getEventPointer(i)->message;
 
-      // TODO: this is necessary for sequencer but should not be used by arp
-      // which indicate that MIDI merging should be processed by a separate
-      // module (probably Voice Assigner)
+      // Note: the following code is necessary for seq but do not make sense for
+      // arp, which indicate that MIDI merging should be processed by a separate
+      // module (probably VoiceAssigner)
+
       // do not note off if held by the keyboard
       // if (message.isNoteOff() &&
       //     keyboardRef.isKeyDown(message.getNoteNumber())) {
@@ -109,46 +104,41 @@ void Track::tick() {
     }
   }
 
-  // advance ticks and overwrap from (length-0.5) to (-0.5) step
-  // because the first step could start from negative steps
-
-  // remeber trackLength_ could be suddenly changed larger or smaller
-  // (potentially by a different thread) at any time
-  // one possible solution: only change length at the start of each step
-
-  // when the length suddently changes out of no where, it fucks up the note off
-  // timing of notes already rendered... to compensate for that, need to modify
-  // existing notes in the second run but it's also a good chance to reflect if
-  // this data structure makes sense
-
-  // also, noteoffs in the firstrun need to be adjusted too?
-
-  // + getTicksPerStep() * (difference in track length?)
-  // so modifying track length should be defereed when on step grid
-
-  // occasional missing note off, why?
   tick_ += 1;
 
-  // update track length at the end of each loop
+  // update track length on beat
   if (tick_ % getTicksPerStep() == getTicksHalfStep()) {
-    trackLength_ = trackLengthDeferred_;
-    // DBG("Track Legnth: " << trackLength_);
+    trackLength_ = trackLengthNew_;
   }
 
+  // update resolution at 0 tick
+  // worry: if (resolution becomes wider) and first step has -0.5 offset
+  // the first step might be skipped
+  // if (tick_%getTicksPerStep() == 0) {
+  //   resolution_ = resolutionNew_;
+  // }
+
+  // wrap from (length-0.5) to -0.5 step
+  // worry: use == instead of >=?
   if (tick_ >= trackLength_ * getTicksPerStep() - getTicksHalfStep()) {
-    // tick_ = -getTicksHalfStep();
-    tick_ -= trackLength_ * getTicksPerStep();
+    midiQueue_.addTimeToMessages(
+        -tick_);  // or use - (trackLength_ * getTicksPerStep() -
+                  // getTicksHalfStep())?
 
-    midiQueue_.addTimeToMessages(-trackLength_ * getTicksPerStep());
-
+    // remove old MIDI events
     for (const auto& midiEvent : midiQueue_) {
-      if (midiEvent->message.getTimeStamp() >= -getTicksHalfStep()) {
+      if (midiEvent->message.getTimeStamp() >= 0) {
         midiQueueNext_.addEvent(midiEvent->message);
       }
     }
     midiQueue_.swapWith(midiQueueNext_);
     midiQueueNext_.clear();
+
+    // apply new resulution
+    resolution_ = resolutionNew_;
+
+    // tick_ -= trackLength_ * getTicksPerStep();
+    tick_ = -getTicksHalfStep();
   }
 }
-
 }  // namespace Sequencer
