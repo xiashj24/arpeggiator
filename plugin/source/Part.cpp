@@ -1,14 +1,12 @@
-#include "PolyArp/Track.h"
+#include "PolyArp/Part.h"
 
 namespace Sequencer {
 
-// TODO: test changing length on the fly in sequencer
-
-int Track::getCurrentStepIndex() const {
+int Part::getCurrentStepIndex() const {
   return (tick_ + getTicksHalfStep()) / getTicksPerStep();
 }
 
-void Track::renderNote(int index, Note note) {
+void Part::renderNote(int index, Note note) {
   if (note.number <= DISABLED_NOTE)
     return;
 
@@ -52,18 +50,18 @@ void Track::renderNote(int index, Note note) {
 }
 
 // insert a future MIDI message into MIDI queue
-void Track::renderMidiMessage(juce::MidiMessage message) {
+void Part::renderMidiMessage(juce::MidiMessage message) {
   midiQueue_.addEvent(message);
 }
 
-void Track::reset(float index) {
+void Part::reset(float index) {
   sendNoteOffNow();
   midiQueue_.clear();
   tick_ = static_cast<int>(getTicksPerStep() * index);
-  resolution_ = resolutionNew_; // necessary?
+  resolution_ = resolutionNew_;  // necessary?
 }
 
-void Track::sendNoteOffNow() {
+void Part::sendNoteOffNow() {
   for (int i = midiQueue_.getNextIndexAtTime(tick_);
        i < midiQueue_.getNumEvents(); ++i) {
     auto message = midiQueue_.getEventPointer(i)->message;
@@ -76,7 +74,7 @@ void Track::sendNoteOffNow() {
   }
 }
 
-void Track::tick() {
+void Part::tick() {
   if (this->enabled_) {
     int index = getCurrentStepIndex();
 
@@ -106,7 +104,7 @@ void Track::tick() {
 
   tick_ += 1;
 
-  // update track length on beat
+  // update track length on step boundaries
   if (tick_ % getTicksPerStep() == getTicksHalfStep()) {
     trackLength_ = trackLengthNew_;
   }

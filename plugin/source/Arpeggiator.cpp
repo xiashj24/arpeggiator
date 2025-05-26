@@ -242,12 +242,13 @@ void Arpeggiator::renderStep(int index) {
   last_note_number_ = arp_note.number;
   arp_note.number += 12 * current_octave_;
   arp_note.length = gate_;
-  if (arp_note.number < 128) {
-    renderNote(index, arp_note);
-    DBG("index: " << index << " note: " << arp_note.number);
-  } else {
-    DBG("index: " << index << " note number larger than 127!");
+  // wrap to the same note below 128
+  while (arp_note.number >= 128) {
+    arp_note.number -= 12;
   }
+
+  renderNote(index, arp_note);
+  DBG("index: " << index << " note: " << arp_note.number);
 }
 
 }  // namespace Sequencer

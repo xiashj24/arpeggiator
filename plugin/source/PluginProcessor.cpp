@@ -173,7 +173,7 @@ void AudioPluginAudioProcessor::hiResTimerCallback() {
   int octave = static_cast<int>(arpOctaveParam->load());
   float gate = arpGateParam->load();
   auto resolution =
-      static_cast<Sequencer::Track::Resolution>(arpResolutionParam->load());
+      static_cast<Sequencer::Part::Resolution>(arpResolutionParam->load());
   bool bypass = static_cast<bool>(arpBypassParam->load());
 
   polyarp.getArp().setType(arp_type);

@@ -22,7 +22,7 @@
 
 namespace Sequencer {
 
-class Track {
+class Part {
 public:
   // mapped to ticks per step
   enum Resolution {
@@ -36,7 +36,7 @@ public:
     _48th,  // 1/16T
   };
 
-  Track(int channel, int length, Resolution resolution)
+  Part(int channel, int length, Resolution resolution)
       : channel_(channel),
         trackLength_(length),
         trackLengthNew_(length),
@@ -45,17 +45,21 @@ public:
         enabled_(true),
         tick_(0) {}
 
-  virtual ~Track() = default;
+  virtual ~Part() = default;
 
   void setEnabled(bool enabled) {
     enabled_ = enabled;
   }  // apply new resolution here?
 
   // TODO: deprecate this
-  void setChannel(int channel) { channel_ = channel; }
+  // void setChannel(int channel) { channel_ = channel; }
 
-  // do the same as setResolution?
-  void setLengthDeferred(int length) { trackLengthNew_ = length; }
+  void setLength(int length) {
+    trackLengthNew_ = length;
+    if (isEnabled()) {
+      trackLength_ = length;
+    }
+  }
   int getChannel() const { return channel_; }
   bool isEnabled() const { return enabled_; }
   int getLength() const { return trackLength_; }

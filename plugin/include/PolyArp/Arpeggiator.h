@@ -1,5 +1,5 @@
 #pragma once
-#include "PolyArp/Track.h"
+#include "PolyArp/Part.h"
 
 // TODO: integrate with global swing and groove
 
@@ -7,7 +7,7 @@
 
 namespace Sequencer {
 
-class Arpeggiator : public Track {
+class Arpeggiator : public Part {
 public:
   enum class ArpType {
     Manual,
@@ -44,7 +44,7 @@ public:
               ArpType type = ArpType::Rise,
               float gate = DEFAULT_LENGTH,
               int octave = 1)
-      : Track(channel, length, resolution),
+      : Part(channel, length, resolution),
         type_(type),
         gate_(gate),
         octave_(octave),
@@ -87,8 +87,8 @@ public:
 
   void stop() {
     keyboard_.reset();
-    Track::setEnabled(false);
-    Track::sendNoteOffNow();
+    Part::setEnabled(false);
+    Part::sendNoteOffNow();
   }
 
 private:
