@@ -37,7 +37,7 @@ private:
   juce::Slider resolutionKnob;
 
   juce::Slider euclidPatternKnob;
-  juce::TextButton euclidLagatoButton;
+  juce::ToggleButton euclidLagatoButton;
 
   juce::Label bpmLabel;
   juce::Slider bpmSlider;

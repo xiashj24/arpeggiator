@@ -63,7 +63,7 @@ AudioPluginAudioProcessor::createParameterLayout() {
 
   // Euclidean Patterns
   StringArray euclidPatternChoices{
-      "off",   "15/16", "13/14", "12/13", "11/12", "10/11", "9/10",  "8/9",
+      "1",     "15/16", "13/14", "12/13", "11/12", "10/11", "9/10",  "8/9",
       "7/8",   "13/15", "6/7",   "11/13", "5/6",   "9/11",  "13/16", "4/5",
       "11/14", "7/9",   "10/13", "3/4",   "11/15", "8/11",  "5/7",   "7/10",
       "9/13",  "11/16", "9/14",  "7/11",  "5/8",   "8/13",  "3/5",   "7/12",
@@ -194,7 +194,8 @@ void AudioPluginAudioProcessor::hiResTimerCallback() {
       static_cast<Sequencer::Part::Resolution>(arpResolutionParam->load());
   bool bypass = static_cast<bool>(arpBypassParam->load());
   bool euclid_legato = static_cast<bool>(euclidLegatoParam->load());
-  auto euclid_pattern = static_cast<Sequencer::Arpeggiator::EuclidPattern>(euclidPatternParam->load());
+  auto euclid_pattern = static_cast<Sequencer::Arpeggiator::EuclidPattern>(
+      euclidPatternParam->load());
   polyarp.getArp().setType(arp_type);
   polyarp.getArp().setOctave(octave);
   polyarp.getArp().setGate(gate);

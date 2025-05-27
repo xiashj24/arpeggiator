@@ -28,14 +28,6 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(
   bypassButton.setTooltip("bypass arpeggiator (b)");
   bypassButton.setColour(juce::TextButton::ColourIds::buttonOnColourId,
                          juce::Colours::orangered);
-  // bypassButton.onClick = [this]() {
-  //   processorRef.setBypassed(bypassButton.getToggleState());
-  //   if (bypassButton.getToggleState() == true) {
-  //     processorRef.polyarp.stop();
-  //   } else {
-  //     processorRef.keyboardState.allNotesOff(0);
-  //   }
-  // };
   addAndMakeVisible(bypassButton);
   bypassAttachment = std::make_unique<ButtonAttachment>(
       processorRef.parameters, "ARP_BYPASS", bypassButton);
@@ -97,7 +89,7 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(
       processorRef.parameters, "ARP_RESOLUTION", resolutionKnob);
 
   // Gate Pattern
-  euclidPatternLabel.setText("Euclid Pattern",
+  euclidPatternLabel.setText("Density",
                              juce::NotificationType::dontSendNotification);
   euclidPatternLabel.setJustificationType(juce::Justification::centredBottom);
   euclidPatternLabel.attachToComponent(&euclidPatternKnob, false);
@@ -109,7 +101,7 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(
   euclidPatternAttachment = std::make_unique<SliderAttachment>(
       processorRef.parameters, "EUCLID_PATTERN", euclidPatternKnob);
 
-  euclidLegatoLabel.setText("Euclid Legato",
+  euclidLegatoLabel.setText("Rest/Tie",
                             juce::NotificationType::dontSendNotification);
   euclidLegatoLabel.setJustificationType(juce::Justification::centredBottom);
   euclidLegatoLabel.attachToComponent(&euclidLagatoButton, false);
@@ -175,6 +167,5 @@ void AudioPluginAudioProcessorEditor::resized() {
   euclidPatternKnob.setBounds(knob_bar.removeFromLeft(KNOB_WIDTH));
   knob_bar.removeFromLeft(KNOB_SPACING);
   euclidLagatoButton.setBounds(knob_bar.removeFromLeft(KNOB_WIDTH));
-  euclidLagatoButton.setSize(KNOB_WIDTH, KNOB_WIDTH);
 }
 }  // namespace audio_plugin
