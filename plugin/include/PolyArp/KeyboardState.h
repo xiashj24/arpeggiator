@@ -21,7 +21,12 @@ public:
 
   void handleNoteOn(juce::MidiMessage noteOn) {
     int note_number = noteOn.getNoteNumber();
-    activeNoteStack_.push_back(note_number);
+    // note: there should be no duplicate notes in activeNoteStack_
+    // which justifies using a set instead
+    if (std::find(activeNoteStack_.begin(), activeNoteStack_.end(),
+                  note_number) == activeNoteStack_.end()) {
+      activeNoteStack_.push_back(note_number);
+    }
     noteOns_[note_number] = noteOn;
     lastChannel_ = noteOn.getChannel();
   }
