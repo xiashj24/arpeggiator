@@ -47,21 +47,19 @@ public:
 
   virtual ~Part() = default;
 
-  void setEnabled(bool enabled) {
-    enabled_ = enabled;
-  }  // apply new resolution here?
+  void setEnabled(bool enabled) { enabled_ = enabled; }
+  bool isEnabled() const { return enabled_; }
 
-  // TODO: deprecate this
-  // void setChannel(int channel) { channel_ = channel; }
+  // [[deprecated]] void setChannel(int channel) { channel_ = channel; }
+  int getChannel() const { return channel_; }
 
+  // if enabled, change will be applied at the start of the next step
   void setLength(int length) {
     trackLengthNew_ = length;
     if (isEnabled()) {
       trackLength_ = length;
     }
   }
-  int getChannel() const { return channel_; }
-  bool isEnabled() const { return enabled_; }
   int getLength() const { return trackLength_; }
 
   // if enabled, change will be applied at the start of the next loop
@@ -76,11 +74,25 @@ public:
   // callback to transfer MIDI messages (timestamp in ticks)
   std::function<void(juce::MidiMessage msg)> sendMidiMessage;
 
-  // the manager of this class is responsible to call this function
-  // getTicksPerStep() times per step
+  // the manager of this class (and derived classes) is responsible to call this
+  // function getTicksPerStep() times per step
   void tick();
 
-  void reset(float index = 0.f);  // for resync to master length
+  void reset(float start_index = 0.f);
+
+  // for GUI
+  float getProgress() const {
+    return static_cast<float>(tick_ - getTicksHalfStep()) /
+           static_cast<float>(getTicksPerStep() * getLength());
+  }
+
+  // TODO: track utilities (randomize, humanize, rotate, etc.)
+
+protected:
+  void renderNote(int index, Note note);
+
+  // timestamp in ticks (not seconds or samples)
+  void renderMidiMessage(juce::MidiMessage message);
 
   int getTicksPerStep() const {
     static const int RESOLUTION_TICKS_TABLE[] = {12, 24, 48, 96, 64, 32, 16, 8};
@@ -92,21 +104,7 @@ public:
 
   void sendNoteOffNow();
 
-  // for GUI
-  // float getProgress() const;
-
   int getCurrentStepIndex() const;
-
-  // TODO: track utilities (randomize, humanize, rotate, Euclidean, Grids,
-  // etc.)
-
-protected:
-  void renderNote(int index, Note note);
-
-  // timestamp in ticks (not seconds or samples)
-  void renderMidiMessage(juce::MidiMessage message);
-
-  // const KeyboardState& keyboardRef; // removed
 
 private:
   int channel_;

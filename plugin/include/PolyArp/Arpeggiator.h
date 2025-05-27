@@ -85,6 +85,7 @@ public:
     stop();
   }
 
+  // deferred stop?
   void stop() {
     keyboard_.reset();
     Part::setEnabled(false);
