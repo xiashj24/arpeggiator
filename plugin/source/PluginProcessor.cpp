@@ -2,6 +2,7 @@
 #include "PolyArp/PluginEditor.h"
 
 #define HIRES_TIMER_INTERVAL_MS 1
+#define E3_PPQ (TICKS_PER_16TH * 4)
 
 namespace audio_plugin {
 AudioPluginAudioProcessor::AudioPluginAudioProcessor()
@@ -241,22 +242,25 @@ void AudioPluginAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer,
     if (auto dawPlayHead = getPlayHead()) {
       if (auto positionInfo = dawPlayHead->getPosition()) {
         polyarp.setBpm(positionInfo->getBpm().orFallback(120.0));
+        polyarp.setSyncToHost(positionInfo->getIsPlaying());
 
-        // TODO: start arp here, and make sure arp sync'd to DAW
-        // sequencer grid if (positionInfo->getIsPlaying()) {
-        //   if (!sequencer.isRunning())
-        //     sequencer.start(juce::Time::getMillisecondCounterHiRes() *
-        //     0.001);
-        // } else {
-        //   if (sequencer.isRunning())
-        //     sequencer.stop();
-        // }
+        double quarter_note = positionInfo->getPpqPosition().orFallback(0.0);
+        int ppq = static_cast<int>(quarter_note * E3_PPQ);
+
+        if ((ppq % TICKS_PER_16TH) == 0) {
+          // start synced to daw (this looks very messy lol)
+          if (polyarp.getSyncToHost()) {
+            if (!polyarp.isRunning() && polyarp.shouldBeRunning()) {
+              polyarp.start(lastCallbackTime);
+            }
+          }
+        }
       }
     }
   }
 
   // discard input MIDI messages if arp is enabled
-  if (polyarp.isRunning()) {
+  if (polyarp.shouldBeRunning()) {
     midiMessages.clear();
   }
 

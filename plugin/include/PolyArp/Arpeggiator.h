@@ -78,6 +78,8 @@ public:
     }
   }
 
+  int getNumNotesPressed() const { return keyboard_.getNumNotesPressed(); }
+
   void setLatchOn() { latch_ = true; }
 
   void setLatchOff() {

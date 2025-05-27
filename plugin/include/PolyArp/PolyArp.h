@@ -19,7 +19,8 @@
 
 namespace Sequencer {
 
-// this classes is responsible for time translation and sending midi notes
+// this classes is responsible for time translation and sending midi messages to
+// upper level
 
 class PolyArp {
 public:
@@ -28,7 +29,8 @@ public:
         timeSinceStart_(0.0),
         startTime_(0.0),
         arp_(1),
-        midiCollector_(midiCollector) {
+        midiCollector_(midiCollector),
+        syncToHost_(false) {
     arp_.setEnabled(false);  // note: track should be disabled by default
 
     arp_.sendMidiMessage = [this](juce::MidiMessage msg) {
@@ -57,21 +59,27 @@ public:
     arp_.setEnabled(true);
     timeSinceStart_ = 0.0;
     startTime_ = startTime;
-    arp_.reset(-0.5f);  // start a bit later to catch all notes in a chord
+    arp_.reset();  // start at 0.f index
   }
 
   bool isRunning() const { return arp_.isEnabled(); }
+  bool shouldBeRunning() const { return arp_.getNumNotesPressed() > 0; }
 
   void handleNoteOn(juce::MidiMessage noteOn) {
     arp_.handleNoteOn(noteOn);
 
-    // note: can also wait for incoming clock to start
-    if (!arp_.isEnabled()) {
-      start(juce::Time::getMillisecondCounterHiRes() * 0.001);
+    if (!syncToHost_) {
+      if (!arp_.isEnabled()) {
+        start(juce::Time::getMillisecondCounterHiRes() * 0.001);
+      }
     }
   }
 
-  void stop() { arp_.stop(); }
+  void setSyncToHost(bool enabled) { syncToHost_ = enabled; }
+  bool getSyncToHost() const { return syncToHost_; }
+
+  // automatically stoppedd when all notes are off
+  void handleNoteOff(juce::MidiMessage noteOff) { arp_.handleNoteOff(noteOff); }
 
   void setLatch(bool enabled) {
     if (enabled) {
@@ -83,14 +91,8 @@ public:
 
   Arpeggiator& getArp() { return arp_; }
 
-  // automatically stoppedd when all notes are off
-  void handleNoteOff(juce::MidiMessage noteOff) { arp_.handleNoteOff(noteOff); }
-
   // deltaTime is in seconds, call this frequenctly, preferably over 1kHz
   void process(double deltaTime) {
-    // if (!arp_.isEnabled())
-    //   return;
-
     timeSinceStart_ += deltaTime;
     double one_tick_time = getOneTickTime();
 
@@ -113,6 +115,8 @@ private:
   Arpeggiator arp_;
 
   juce::MidiMessageCollector& midiCollector_;
+
+  bool syncToHost_;
 
   JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PolyArp)
 };

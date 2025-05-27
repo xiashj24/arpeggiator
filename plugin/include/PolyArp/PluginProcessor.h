@@ -30,7 +30,7 @@ public:
 
   void setBypassed(bool shouldBypass) {
     if (shouldBypass && !bypassed) {
-      polyarp.stop();
+      polyarp.getArp().stop();
     }
     if (!shouldBypass && bypassed) {
       keyboardState.allNotesOff(0);

@@ -201,7 +201,6 @@ void Arpeggiator::renderStep(int index) {
 
           renderNote(index, arp_note);
         }
-        // DBG("index: " << index << " random three");
         return;
       } else
         [[fallthrough]];
@@ -221,7 +220,7 @@ void Arpeggiator::renderStep(int index) {
 
           renderNote(index, arp_note);
         }
-        DBG("index: " << index << " random two");
+        DBG("index: " << index << " random 2/3 mode");
         return;
       }
       break;
