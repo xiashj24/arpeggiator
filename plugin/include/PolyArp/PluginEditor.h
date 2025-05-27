@@ -28,11 +28,16 @@ private:
   juce::Label octaveLabel;
   juce::Label gateLabel;
   juce::Label resolutionLabel;
+  juce::Label euclidPatternLabel;
+  juce::Label euclidLegatoLabel;
 
   juce::Slider typeKnob;
   juce::Slider octaveKnob;
   juce::Slider gateKnob;
   juce::Slider resolutionKnob;
+
+  juce::Slider euclidPatternKnob;
+  juce::TextButton euclidLagatoButton;
 
   juce::Label bpmLabel;
   juce::Slider bpmSlider;
@@ -41,9 +46,9 @@ private:
   using ButtonAttachment = juce::AudioProcessorValueTreeState::ButtonAttachment;
 
   std::unique_ptr<SliderAttachment> typeAttachment, octaveAttachment,
-      gateAttachment, resolutionAttachment;
+      gateAttachment, resolutionAttachment, euclidPatternAttachment;
 
-  std::unique_ptr<ButtonAttachment> bypassAttachment;
+  std::unique_ptr<ButtonAttachment> bypassAttachment, euclidLegatoAttachment;
 
   JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AudioPluginAudioProcessorEditor)
 };

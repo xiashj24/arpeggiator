@@ -37,7 +37,8 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(
   //   }
   // };
   addAndMakeVisible(bypassButton);
-  bypassAttachment = std::make_unique<ButtonAttachment>(processorRef.parameters, "ARP_BYPASS", bypassButton);
+  bypassAttachment = std::make_unique<ButtonAttachment>(
+      processorRef.parameters, "ARP_BYPASS", bypassButton);
 
   latchButton.setButtonText("Latch");
   latchButton.setClickingTogglesState(true);
@@ -95,6 +96,31 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(
   resolutionAttachment = std::make_unique<SliderAttachment>(
       processorRef.parameters, "ARP_RESOLUTION", resolutionKnob);
 
+  // Gate Pattern
+  euclidPatternLabel.setText("Euclid Pattern",
+                             juce::NotificationType::dontSendNotification);
+  euclidPatternLabel.setJustificationType(juce::Justification::centredBottom);
+  euclidPatternLabel.attachToComponent(&euclidPatternKnob, false);
+  euclidPatternKnob.setSliderStyle(juce::Slider::RotaryVerticalDrag);
+  euclidPatternKnob.setTextBoxStyle(juce::Slider::TextBoxBelow, false,
+                                    KNOB_WIDTH, KNOB_TEXT_HEIGHT);
+  addAndMakeVisible(euclidPatternKnob);
+
+  euclidPatternAttachment = std::make_unique<SliderAttachment>(
+      processorRef.parameters, "EUCLID_PATTERN", euclidPatternKnob);
+
+  euclidLegatoLabel.setText("Euclid Legato",
+                            juce::NotificationType::dontSendNotification);
+  euclidLegatoLabel.setJustificationType(juce::Justification::centredBottom);
+  euclidLegatoLabel.attachToComponent(&euclidLagatoButton, false);
+
+  euclidLagatoButton.setClickingTogglesState(true);
+  euclidLagatoButton.setColour(juce::TextButton::ColourIds::buttonOnColourId,
+                               juce::Colours::orangered);
+  addAndMakeVisible(euclidLagatoButton);
+  euclidLegatoAttachment = std::make_unique<ButtonAttachment>(
+      processorRef.parameters, "EUCLID_LEGATO", euclidLagatoButton);
+
   if (processorRef.wrapperType ==
       juce::AudioProcessor::WrapperType::wrapperType_Standalone) {
     bpmLabel.setText("BPM: ", juce::NotificationType::dontSendNotification);
@@ -121,11 +147,6 @@ void AudioPluginAudioProcessorEditor::paint(juce::Graphics& g) {
   // solid colour)
   g.fillAll(
       getLookAndFeel().findColour(juce::ResizableWindow::backgroundColourId));
-
-  // g.setColour(juce::Colours::white);
-  // g.setFont(15.0f);
-  // g.drawFittedText("Hello World!", getLocalBounds(),
-  //                  juce::Justification::centred, 1);
 }
 
 void AudioPluginAudioProcessorEditor::resized() {
@@ -150,5 +171,10 @@ void AudioPluginAudioProcessorEditor::resized() {
   gateKnob.setBounds(knob_bar.removeFromLeft(KNOB_WIDTH));
   knob_bar.removeFromLeft(KNOB_SPACING);
   resolutionKnob.setBounds(knob_bar.removeFromLeft(KNOB_WIDTH));
+  knob_bar.removeFromLeft(KNOB_SPACING);
+  euclidPatternKnob.setBounds(knob_bar.removeFromLeft(KNOB_WIDTH));
+  knob_bar.removeFromLeft(KNOB_SPACING);
+  euclidLagatoButton.setBounds(knob_bar.removeFromLeft(KNOB_WIDTH));
+  euclidLagatoButton.setSize(KNOB_WIDTH, KNOB_WIDTH);
 }
 }  // namespace audio_plugin

@@ -68,6 +68,9 @@ private:
 
   std::atomic<float>* arpBypassParam = nullptr;
 
+  std::atomic<float>* euclidPatternParam = nullptr;
+  std::atomic<float>* euclidLegatoParam = nullptr;
+
   juce::MidiMessageCollector arpMidiCollector;
   double lastCallbackTime;
   std::atomic<bool> bypassed;

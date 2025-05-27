@@ -25,6 +25,8 @@ AudioPluginAudioProcessor::AudioPluginAudioProcessor()
   arpGateParam = parameters.getRawParameterValue("ARP_GATE");
   arpResolutionParam = parameters.getRawParameterValue("ARP_RESOLUTION");
   arpBypassParam = parameters.getRawParameterValue("ARP_BYPASS");
+  euclidPatternParam = parameters.getRawParameterValue("EUCLID_PATTERN");
+  euclidLegatoParam = parameters.getRawParameterValue("EUCLID_LEGATO");
 
   HighResolutionTimer::startTimer(HIRES_TIMER_INTERVAL_MS);
 }
@@ -39,7 +41,7 @@ AudioPluginAudioProcessor::createParameterLayout() {
   StringArray arpTypeChoices{
       "Manual",    "Rise",         "Fall",    "Rise Fall", "Rise N' Fall",
       "Fall Rise", "Fall N' Rise", "Shuffle", "Walk",      "Random 1",
-      "Random 2",  "Random 3"}; // do not use chord mode
+      "Random 2",  "Random 3"};  // do not use chord mode
   layout.add(std::make_unique<AudioParameterChoice>("ARP_TYPE", "Arp Type",
                                                     arpTypeChoices, 0));
 
@@ -59,10 +61,25 @@ AudioPluginAudioProcessor::createParameterLayout() {
   layout.add(std::make_unique<AudioParameterChoice>(
       "ARP_RESOLUTION", "Resolution", resolutionChoices, 2));
 
+  // Euclidean Patterns
+  StringArray euclidPatternChoices{
+      "off",   "15/16", "13/14", "12/13", "11/12", "10/11", "9/10",  "8/9",
+      "7/8",   "13/15", "6/7",   "11/13", "5/6",   "9/11",  "13/16", "4/5",
+      "11/14", "7/9",   "10/13", "3/4",   "11/15", "8/11",  "5/7",   "7/10",
+      "9/13",  "11/16", "9/14",  "7/11",  "5/8",   "8/13",  "3/5",   "7/12",
+      "4/7",   "9/16",  "5/9",   "6/11",  "7/13",  "8/15",  "7/15",  "6/13",
+      "5/11",  "4/9",   "7/16",  "3/7",   "5/12",  "2/5",   "5/13",  "3/8",
+      "4/11",  "5/14",  "5/16",  "4/13",  "3/10",  "2/7",   "3/11",  "4/15",
+      "3/13",  "2/9",   "3/14",  "3/16",  "2/11",  "2/13",  "2/15"};
+
+  layout.add(std::make_unique<AudioParameterChoice>(
+      "EUCLID_PATTERN", "Euclid Pattern", euclidPatternChoices, 0));
+
+  layout.add(std::make_unique<AudioParameterBool>("EUCLID_LEGATO",
+                                                  "Euclid Legato", false));
+
   layout.add(
-      std::make_unique<juce::AudioParameterBool>("ARP_LATCH", "Latch", false));
-  layout.add(std::make_unique<juce::AudioParameterBool>("ARP_BYPASS", "Bypass",
-                                                        false));
+      std::make_unique<AudioParameterBool>("ARP_BYPASS", "Bypass", false));
 
   return layout;
 }
@@ -176,11 +193,14 @@ void AudioPluginAudioProcessor::hiResTimerCallback() {
   auto resolution =
       static_cast<Sequencer::Part::Resolution>(arpResolutionParam->load());
   bool bypass = static_cast<bool>(arpBypassParam->load());
-
+  bool euclid_legato = static_cast<bool>(euclidLegatoParam->load());
+  auto euclid_pattern = static_cast<Sequencer::Arpeggiator::EuclidPattern>(euclidPatternParam->load());
   polyarp.getArp().setType(arp_type);
   polyarp.getArp().setOctave(octave);
   polyarp.getArp().setGate(gate);
   polyarp.getArp().setResolution(resolution);
+  polyarp.getArp().setEuclidLegato(euclid_legato);
+  polyarp.getArp().setEuclidPattern(euclid_pattern);
   this->setBypassed(bypass);
 
   polyarp.process(deltaTime);
