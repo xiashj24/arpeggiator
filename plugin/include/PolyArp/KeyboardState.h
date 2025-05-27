@@ -21,29 +21,34 @@ public:
 
   void handleNoteOn(juce::MidiMessage noteOn) {
     int note_number = noteOn.getNoteNumber();
-    // note: there should be no duplicate notes in activeNoteStack_
-    // which justifies using a set instead
-    if (std::find(activeNoteStack_.begin(), activeNoteStack_.end(),
-                  note_number) == activeNoteStack_.end()) {
-      activeNoteStack_.push_back(note_number);
-    }
+    toggleNoteOff(noteOn.getNoteNumber());
+    activeNoteStack_.push_back(note_number);
     noteOns_[note_number] = noteOn;
     lastChannel_ = noteOn.getChannel();
   }
 
-  // returns the matching note on message
-  juce::MidiMessage handleNoteOff(juce::MidiMessage noteOff) {
-    int note_number = noteOff.getNoteNumber();
-
+  // return true if there was a valid note
+  bool toggleNoteOff(int note_number) {
     auto it = std::find(activeNoteStack_.begin(), activeNoteStack_.end(),
                         note_number);
 
     if (it == activeNoteStack_.end()) {
-      DBG("note on and note off mismatch!");
-      return juce::MidiMessage();
+      return false;
     } else {
       activeNoteStack_.erase(it);
+      return true;
+    }
+  }
+
+  // returns the matching note on message
+  juce::MidiMessage handleNoteOff(juce::MidiMessage noteOff) {
+    auto note_number = noteOff.getNoteNumber();
+
+    if (toggleNoteOff(note_number)) {
       return noteOns_[note_number];
+    } else {
+      DBG("note on and note off mismatch!");
+      return juce::MidiMessage();
     }
   }
 
