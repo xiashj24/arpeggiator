@@ -39,7 +39,7 @@ AudioPluginAudioProcessor::createParameterLayout() {
   StringArray arpTypeChoices{
       "Manual",    "Rise",         "Fall",    "Rise Fall", "Rise N' Fall",
       "Fall Rise", "Fall N' Rise", "Shuffle", "Walk",      "Random 1",
-      "Random 2",  "Random 3",     "Chord"};
+      "Random 2",  "Random 3"}; // do not use chord mode
   layout.add(std::make_unique<AudioParameterChoice>("ARP_TYPE", "Arp Type",
                                                     arpTypeChoices, 0));
 
