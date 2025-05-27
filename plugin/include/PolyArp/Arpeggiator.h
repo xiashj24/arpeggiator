@@ -85,11 +85,10 @@ public:
     stop();
   }
 
-  // deferred stop?
   void stop() {
     keyboard_.reset();
     Part::setEnabled(false);
-    Part::sendNoteOffNow();
+    // Part::sendNoteOffNow();
   }
 
 private:

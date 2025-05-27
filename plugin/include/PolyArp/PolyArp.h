@@ -88,8 +88,8 @@ public:
 
   // deltaTime is in seconds, call this frequenctly, preferably over 1kHz
   void process(double deltaTime) {
-    if (!arp_.isEnabled())
-      return;
+    // if (!arp_.isEnabled())
+    //   return;
 
     timeSinceStart_ += deltaTime;
     double one_tick_time = getOneTickTime();

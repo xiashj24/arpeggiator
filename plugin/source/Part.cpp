@@ -66,13 +66,15 @@ void Part::sendNoteOffNow() {
        i < midiQueue_.getNumEvents(); ++i) {
     auto message = midiQueue_.getEventPointer(i)->message;
     if (message.isNoteOff()) {
-      message.setTimeStamp(tick_);
+      // message.setTimeStamp(tick_); // no effect?
       sendMidiMessage(message);
     }
   }
 }
 
 void Part::tick() {
+  // disabled part still ticks (to send shceduled note-offs) but does not render
+  // step
   if (this->enabled_) {
     int index = getCurrentStepIndex();
 
@@ -80,24 +82,24 @@ void Part::tick() {
     if (tick_ == getStepRenderTick(index)) {
       renderStep(index);
     }
+  }
 
-    // send current tick's MIDI events
-    for (int i = midiQueue_.getNextIndexAtTime(tick_);
-         i < midiQueue_.getNextIndexAtTime(tick_ + 1); ++i) {
-      auto message = midiQueue_.getEventPointer(i)->message;
+  // send current tick's MIDI events
+  for (int i = midiQueue_.getNextIndexAtTime(tick_);
+       i < midiQueue_.getNextIndexAtTime(tick_ + 1); ++i) {
+    auto message = midiQueue_.getEventPointer(i)->message;
 
-      // Note: the following code is necessary for seq but do not make sense for
-      // arp, which indicate that MIDI merging should be processed by a separate
-      // module (probably VoiceAssigner)
+    // Note: the following code is necessary for seq but do not make sense for
+    // arp, which indicate that MIDI merging should be processed by a separate
+    // module (probably VoiceAssigner)
 
-      // do not note off if held by the keyboard
-      // if (message.isNoteOff() &&
-      //     keyboardRef.isKeyDown(message.getNoteNumber())) {
-      //   continue;
-      // }
+    // do not note off if held by the keyboard
+    // if (message.isNoteOff() &&
+    //     keyboardRef.isKeyDown(message.getNoteNumber())) {
+    //   continue;
+    // }
 
-      sendMidiMessage(message);
-    }
+    sendMidiMessage(message);
   }
 
   tick_ += 1;
