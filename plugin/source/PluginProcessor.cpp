@@ -49,7 +49,7 @@ AudioPluginAudioProcessor::createParameterLayout() {
 
   // Gate (0.0 to 2.0)
   layout.add(std::make_unique<AudioParameterFloat>(
-      "ARP_GATE", "Gate", NormalisableRange<float>(0.0f, 2.0f, 0.01f),
+      "ARP_GATE", "Gate", NormalisableRange<float>(0.1f, 2.0f, 0.01f),
       DEFAULT_LENGTH));
 
   // Resolution
