@@ -183,12 +183,14 @@ void Arpeggiator::renderStep(int index) {
     case ArpType::Random:
       arp_note = keyboard_.getRandomNote();
       current_octave_ = juce::Random::getSystemRandom().nextInt(octave_);
+      DBG("index: " << index << " random 1 mode");
       break;
 
     case ArpType::Shuffle:
       // re-shuffle on every loop start
       if (index % (num_notes_pressed * octave_) == 0) {
         shuffleNotesWithOctave();
+        // reshuffle if shuffled_note_list[0] == last_note_number?
       }
       arp_note.number = shuffled_note_list[static_cast<size_t>(
           index % (num_notes_pressed * octave_))];
@@ -276,6 +278,7 @@ void Arpeggiator::renderStep(int index) {
   DBG("index: " << index << " note: " << arp_note.number);
 }
 
+// MARK: euclid
 void Arpeggiator::setEuclidPattern(EuclidPattern pattern) {
   switch (pattern) {
     case EuclidPattern::Off:
@@ -531,6 +534,8 @@ void Arpeggiator::setEuclidPattern(EuclidPattern pattern) {
       euclid_length_ = 15;
       break;
   }
+  // this line guarantees that first pulse is always on
+  euclid_rotate_ = euclid_length_ / euclid_fill_;
 }
 
 }  // namespace Sequencer

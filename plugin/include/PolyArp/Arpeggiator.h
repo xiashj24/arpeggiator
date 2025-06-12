@@ -110,13 +110,9 @@ public:
         octave_(octave),
         last_note_number_(DUMMY_NOTE),
         rising_(true),
+        euclid_legato_(false),
         current_octave_(0) {
     shuffled_note_list.reserve(128);
-
-    euclid_fill_ = 3;  // pulses
-    euclid_length_ = 11;
-    euclid_rotate_ = 0;
-    euclid_legato_ = false;
   }
 
   void setType(ArpType type) { type_ = type; }
