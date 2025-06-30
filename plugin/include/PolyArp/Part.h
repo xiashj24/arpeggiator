@@ -1,10 +1,9 @@
 #pragma once
 #include "PolyArp/Note.h"
-#include "PolyArp/KeyboardState.h"
 #include <juce_audio_basics/juce_audio_basics.h>  // juce::MidiMessageSequence
 
 /*
-  core functionality of a one track monophonic sequencer
+  sequencer/arpeggiator base class
 
   created by Shijie Xia in 2025/2
   maintained by {put your name here if you have to maintain this} in {date}
@@ -17,7 +16,7 @@
 */
 
 // TODO: make this a static constexpr variable of TRACK(Part)
-#define STEP_SEQ_MAX_LENGTH 16  // TODO: test as large as 128
+#define STEP_SEQ_MAX_LENGTH 64
 #define STEP_SEQ_DEFAULT_LENGTH 16
 
 namespace Sequencer {
@@ -42,31 +41,31 @@ public:
         trackLengthNew_(length),
         resolution_(resolution),
         resolutionNew_(resolution),
-        enabled_(true),
+        muted_(false),
         tick_(0) {}
 
   virtual ~Part() = default;
 
-  void setEnabled(bool enabled) { enabled_ = enabled; }
-  bool isEnabled() const { return enabled_; }
+  void setMuted(bool enabled) { muted_ = enabled; }
+  bool isMuted() const { return muted_; }
 
-  // [[deprecated]] void setChannel(int channel) { channel_ = channel; }
+  // void setChannel(int channel) { channel_ = channel; }
   int getChannel() const { return channel_; }
 
-  // if enabled, change will be applied at the start of the next step
+  // if not muted, change will be effective on next loop start
   void setLength(int length) {
     trackLengthNew_ = length;
-    if (isEnabled()) {
+    if (isMuted()) {
       trackLength_ = length;
     }
   }
+
   int getLength() const { return trackLength_; }
 
-  // if enabled, change will be applied at the start of the next loop
+  // if not muted, change will be effective on next loop start
   void setResolution(Resolution resolution) {
     resolutionNew_ = resolution;
-
-    if (!isEnabled()) {
+    if (isMuted()) {
       resolution_ = resolution;
     }
   }
@@ -82,11 +81,31 @@ public:
 
   // for GUI
   float getProgress() const {
-    return static_cast<float>(tick_ - getTicksHalfStep()) /
+    return static_cast<float>(tick_ + getTicksHalfStep()) /
            static_cast<float>(getTicksPerStep() * getLength());
   }
 
-  // TODO: track utilities (randomize, humanize, rotate, etc.)
+  int getCurrentStepIndex() const;
+
+  bool isOnOddStep() const {
+    if (tick_ < 0) {
+      return (getLength() - 1) % 2 == 0;
+    } else {
+      return (tick_ / getTicksPerStep()) % 2 == 0;
+    }
+  }
+
+  int getTicksPerStep() const {
+    static const int RESOLUTION_TICKS_TABLE[] = {12, 24, 48, 96, 64, 32, 16, 8};
+    return RESOLUTION_TICKS_TABLE[static_cast<int>(resolution_)];
+  }
+
+  void moveToGrid() { tick_ = getCurrentStepIndex() * getTicksPerStep(); }
+
+  void sendNoteOffNow();
+
+  // callback fired on step grid
+  std::function<void(int)> onStep;
 
 protected:
   void renderNote(int index, Note note);
@@ -94,33 +113,20 @@ protected:
   // timestamp in ticks (not seconds or samples)
   void renderMidiMessage(juce::MidiMessage message);
 
-  int getTicksPerStep() const {
-    static const int RESOLUTION_TICKS_TABLE[] = {12, 24, 48, 96, 64, 32, 16, 8};
-
-    return RESOLUTION_TICKS_TABLE[static_cast<int>(resolution_)];
-  }
-
   int getTicksHalfStep() const { return getTicksPerStep() / 2; }
-
-  void sendNoteOffNow();
-
-  int getCurrentStepIndex() const;
 
 private:
   int channel_;
 
   // track parameters as seen by the user
-
   int trackLength_;
   int trackLengthNew_;
   Resolution resolution_;
   Resolution resolutionNew_;
 
-  // TODO: implement swing (should not affect roll through)
-  [[maybe_unused]] float swing_;
-  [[maybe_unused]] int resetLength_;  // 0 means do not sync to resetLegnth
+  // int ApplySwingToTick(int tick) const;
 
-  bool enabled_;
+  bool muted_;
 
   // function related variables
   int tick_;
@@ -129,10 +135,13 @@ private:
   virtual void renderStep(int index) = 0;
   virtual int getStepRenderTick(int index) const = 0;
 
+  // helpers
+  bool isOnGrid() const { return tick_ % getTicksPerStep() == 0; }
+
   /*
     invariant: MIDI messages are always sorted by timestamp
     note: when porting to Spark/Prologue, change from juce::MidiMessageSequence
-    to a simpler data structure (FIFO queue)
+    to a simpler data structure (something like FIFO queue)
   */
   juce::MidiMessageSequence midiQueue_, midiQueueNext_;
 };

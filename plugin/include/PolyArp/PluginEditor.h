@@ -1,6 +1,7 @@
 #pragma once
 
 #include "PluginProcessor.h"
+#include "PolyArp/TrackComponent.h"
 
 #include <juce_audio_utils/juce_audio_utils.h>  // juce::MidiKeyboardComponent
 
@@ -21,9 +22,7 @@ private:
 
   juce::MidiKeyboardComponent onScreenKeyboard;
 
-  juce::TextButton bypassButton;
-  juce::TextButton latchButton;
-
+  // arp
   juce::Label typeLabel;
   juce::Label octaveLabel;
   juce::Label gateLabel;
@@ -39,8 +38,26 @@ private:
   juce::Slider euclidPatternKnob;
   juce::ToggleButton euclidLagatoButton;
 
+  // seq
+  juce::Viewport sequencerViewport;
+  PolyTrackComponent sequencerComponent;
+
+  // utility bar
+  juce::TextButton playButton;
+  juce::TextButton stopButton;
+  juce::TextButton recordButton;
+  juce::TextButton quantizeButton;
+  juce::TextButton keytriggerButton;
+  juce::ComboBox keytriggerModeSelector;
+
+  juce::TextButton arpButton;
+  juce::TextButton holdButton;
+
   juce::Label bpmLabel;
   juce::Slider bpmSlider;
+
+  juce::Label swingLabel;
+  juce::Slider swingSlider;
 
   using SliderAttachment = juce::AudioProcessorValueTreeState::SliderAttachment;
   using ButtonAttachment = juce::AudioProcessorValueTreeState::ButtonAttachment;

@@ -10,6 +10,8 @@ void Part::renderNote(int index, Note note) {
   if (note.number <= DISABLED_NOTE)
     return;
 
+  DBG("rendered note number: " << note.number);
+
   int note_on_tick =
       static_cast<int>((index + note.offset) * getTicksPerStep());
   int note_off_tick =
@@ -51,36 +53,55 @@ void Part::renderNote(int index, Note note) {
 
 // insert a future MIDI message into MIDI queue
 void Part::renderMidiMessage(juce::MidiMessage message) {
+  // int tick = static_cast<int>(message.getTimeStamp());
+  // tick = ApplySwingToTick(tick);
+  // message.setTimeStamp(static_cast<int>(tick));
   midiQueue_.addEvent(message);
 }
 
 void Part::reset(float start_index) {
-  sendNoteOffNow();
+  // sendNoteOffNow();
   midiQueue_.clear();
   tick_ = static_cast<int>(getTicksPerStep() * start_index);
   resolution_ = resolutionNew_;  // necessary?
 }
 
 void Part::sendNoteOffNow() {
+  // delete unsent note on-offs pairs in the future first?
+  // for (int i = midiQueue_.getNextIndexAtTime(tick_);
+  //      i < midiQueue_.getNumEvents(); ++i) {
+  //   auto& message = midiQueue_.getEventPointer(i)->message;
+  //   if (message.isNoteOn())
+  //   {
+  //     message.setVelocity(0.f);
+  //   }
+  // }
+
   for (int i = midiQueue_.getNextIndexAtTime(tick_);
        i < midiQueue_.getNumEvents(); ++i) {
     auto message = midiQueue_.getEventPointer(i)->message;
     if (message.isNoteOff()) {
-      // message.setTimeStamp(tick_); // no effect?
+      message.setTimeStamp(tick_);  // this appears to have no effect
       sendMidiMessage(message);
     }
   }
 }
 
 void Part::tick() {
-  // disabled part still ticks (to send shceduled note-offs) but does not render
-  // step
-  if (this->enabled_) {
-    int index = getCurrentStepIndex();
+  // disabled part still ticks but does not render step
+  int index = getCurrentStepIndex();
 
+  if (!muted_) {
     // render the step just right before it's too late
     if (tick_ == getStepRenderTick(index)) {
       renderStep(index);
+    }
+  }
+
+  // on step callback
+  if (isOnGrid()) {
+    if (onStep) {
+      onStep(index);
     }
   }
 
@@ -95,7 +116,7 @@ void Part::tick() {
 
     // do not note off if held by the keyboard
     // if (message.isNoteOff() &&
-    //     keyboardRef.isKeyDown(message.getNoteNumber())) {
+    // keyboardRef.isKeyDown(message.getNoteNumber())) {
     //   continue;
     // }
 
@@ -112,7 +133,7 @@ void Part::tick() {
   // update resolution at 0 tick
   // worry: if (resolution becomes wider) and first step has -0.5 offset
   // the first step might be skipped
-  // if (tick_%getTicksPerStep() == 0) {
+  // if (isOnGrid()) {
   //   resolution_ = resolutionNew_;
   // }
 
@@ -123,7 +144,7 @@ void Part::tick() {
         -tick_);  // or use - (trackLength_ * getTicksPerStep() -
                   // getTicksHalfStep())?
 
-    // remove old MIDI events
+    // only keep newer note events
     for (const auto& midiEvent : midiQueue_) {
       if (midiEvent->message.getTimeStamp() >= 0) {
         midiQueueNext_.addEvent(midiEvent->message);

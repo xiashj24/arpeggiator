@@ -1,0 +1,31 @@
+---
+title: Prologue X arpeggiator and sequencer
+---
+
+stateDiagram-v2
+    %% states
+    AS: arpeggiator and sequencer running
+    ID: idle 
+    S: sequencer running
+    A: arpeggiator running
+
+    state A {
+        [*] --> LatchOff
+        [*] --> LatchOn: [Hold] on
+        LatchOff --> LatchOn: [Hold] on
+        LatchOn --> LatchOff: [Hold] off(schedule noteoff)
+
+        note right of LatchOn: arp do not handle noteoff
+    }
+
+    %% transition
+    [*] --> ID
+    ID --> S: (instant start)
+    ID --> A: [Key On and Arp On] (instant start)
+    A --> ID: [All Keys Off or Arp Off] (schedule noteoff)
+    S --> ID: (instant noteoff)
+    S --> AS: (start at next seq step)
+    A --> AS: (start at next arp step)
+    AS --> S: (schedule noteoff)
+    AS --> A: (instant noteoff??)
+

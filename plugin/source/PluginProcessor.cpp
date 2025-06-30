@@ -15,21 +15,70 @@ AudioPluginAudioProcessor::AudioPluginAudioProcessor()
               .withOutput("Output", juce::AudioChannelSet::stereo(), true)
 #endif
               ),
-      polyarp(arpMidiCollector),
+      arpseq(arpMidiCollector),
       parameters(*this, &undoManager, "PolyArp", createParameterLayout()),
-      lastCallbackTime(0.0),
-      bypassed(false) {
-
+      lastCallbackTime(0.0) {
+  // arp parameters
   arpTypeParam = parameters.getRawParameterValue("ARP_TYPE");
   arpOctaveParam = parameters.getRawParameterValue("ARP_OCTAVE");
   arpGateParam = parameters.getRawParameterValue("ARP_GATE");
   arpResolutionParam = parameters.getRawParameterValue("ARP_RESOLUTION");
-  arpBypassParam = parameters.getRawParameterValue("ARP_BYPASS");
   euclidPatternParam = parameters.getRawParameterValue("EUCLID_PATTERN");
   euclidLegatoParam = parameters.getRawParameterValue("EUCLID_LEGATO");
 
+  // seq parameters
+  for (int step = 0; step < STEP_SEQ_MAX_LENGTH; ++step) {
+    juce::String prefix = "S" + juce::String(step) + "_";
+    seqStepEnabledParam[step] =
+        parameters.getRawParameterValue(prefix + "ENABLED");
+
+    for (int note = 0; note < POLYPHONY; ++note) {
+      juce::String note_signifier = "N" + juce::String(note) + "_";
+
+      seqStepNoteParam[step][note] =
+          parameters.getRawParameterValue(prefix + note_signifier + "NOTE");
+      seqStepVelocityParam[step][note] =
+          parameters.getRawParameterValue(prefix + note_signifier + "VELOCITY");
+      seqStepOffsetParam[step][note] =
+          parameters.getRawParameterValue(prefix + note_signifier + "OFFSET");
+      seqStepLengthParam[step][note] =
+          parameters.getRawParameterValue(prefix + note_signifier + "LENGTH");
+    }
+  }
+
+  arpseq.notifyProcessorSeqUpdate =
+      [this](int step_index, Sequencer::PolyStep<POLYPHONY> step) {
+        undoManager.beginNewTransaction("Live recording note");
+
+        juce::String prefix = "S" + juce::String(step_index) + "_";
+        auto p = parameters.getParameter(prefix + "ENABLED");
+        p->setValueNotifyingHost(static_cast<float>(step.enabled));
+
+        for (int i = 0; i < POLYPHONY; ++i) {
+          auto note_signifier = "N" + juce::String(i) + "_";
+          p = parameters.getParameter(prefix + note_signifier + "NOTE");
+          p->setValueNotifyingHost(
+              p->convertTo0to1(static_cast<float>(step.notes[i].number)));
+
+          p = parameters.getParameter(prefix + note_signifier + "VELOCITY");
+          p->setValueNotifyingHost(
+              p->convertTo0to1(static_cast<float>(step.notes[i].velocity)));
+
+          p = parameters.getParameter(prefix + note_signifier + "OFFSET");
+          p->setValueNotifyingHost(p->convertTo0to1(step.notes[i].offset));
+
+          p = parameters.getParameter(prefix + note_signifier + "LENGTH");
+          p->setValueNotifyingHost(p->convertTo0to1(step.notes[i].length));
+        }
+      };
+
   HighResolutionTimer::startTimer(HIRES_TIMER_INTERVAL_MS);
 }
+
+const juce::String OffsetText[] = {
+    "-1/2", "-11/24", "-5/12", "-3/8",  "-1/3", "-7/24", "-1/4", "-5/24",
+    "-1/6", "-1/8",   "-1/12", "-1/24", "0",    "1/24",  "1/12", "1/8",
+    "1/6",  "5/24",   "1/4",   "7/24",  "1/3",  "3/8",   "5/12", "11/24"};
 
 // MARK: parameter layout
 juce::AudioProcessorValueTreeState::ParameterLayout
@@ -37,11 +86,30 @@ AudioPluginAudioProcessor::createParameterLayout() {
   using namespace juce;
   AudioProcessorValueTreeState::ParameterLayout layout;
 
+  auto note_attributes =
+      juce::AudioParameterIntAttributes{}.withStringFromValueFunction(
+          [](int value, int maximumStringLength) {
+            juce::ignoreUnused(maximumStringLength);
+            if (value <= DISABLED_NOTE) {
+              return juce::String("Off");
+            } else {
+              return juce::MidiMessage::getMidiNoteName(value, true, true, 4);
+            }
+          });
+
+  auto offset_attributes =
+      juce::AudioParameterFloatAttributes{}.withStringFromValueFunction(
+          [](float value, int maximumStringLength) {
+            juce::ignoreUnused(maximumStringLength);
+            int index = static_cast<int>(value * 24) + 12;
+            return OffsetText[index];
+          });
+
   // Arpeggiator Type
   StringArray arpTypeChoices{
       "Manual",    "Rise",         "Fall",    "Rise Fall", "Rise N' Fall",
       "Fall Rise", "Fall N' Rise", "Shuffle", "Walk",      "Random 1",
-      "Random 2",  "Random 3"};  // chord mode deleted
+      "Random 2",  "Random 3"};  // note: chord mode deleted
   layout.add(std::make_unique<AudioParameterChoice>("ARP_TYPE", "Arp Type",
                                                     arpTypeChoices, 0));
 
@@ -78,8 +146,51 @@ AudioPluginAudioProcessor::createParameterLayout() {
   layout.add(std::make_unique<AudioParameterBool>("EUCLID_LEGATO",
                                                   "Euclid Legato", false));
 
-  layout.add(
-      std::make_unique<AudioParameterBool>("ARP_BYPASS", "Bypass", false));
+  // layout.add(
+  //     std::make_unique<AudioParameterBool>("ARP_BYPASS", "Bypass", false));
+
+  for (int step = 0; step < STEP_SEQ_MAX_LENGTH; ++step) {
+    String prefix = "S" + String(step) + "_";
+    layout.add(std::make_unique<AudioParameterBool>(prefix + "ENABLED",
+                                                    "Enabled", false));
+
+    layout.add(std::make_unique<AudioParameterInt>(
+        prefix + "N0_NOTE", "Note", 20, 127, DEFAULT_NOTE, note_attributes));
+
+    layout.add(std::make_unique<AudioParameterInt>(
+        prefix + "N0_VELOCITY", "Velocity", 1, 127, DEFAULT_VELOCITY));
+
+    layout.add(std::make_unique<AudioParameterFloat>(
+        prefix + "N0_OFFSET", "Offset",
+        NormalisableRange<float>(-0.5f, 0.49f, 0.01f), 0.0f,
+        offset_attributes));
+
+    layout.add(std::make_unique<AudioParameterFloat>(
+        prefix + "N0_LENGTH", "Length",
+        NormalisableRange<float>(0.08f, STEP_SEQ_MAX_LENGTH, 0.01f, 0.5f),
+        static_cast<float>(DEFAULT_LENGTH)));
+
+    for (int note = 1; note < POLYPHONY; ++note) {
+      String note_signifier = "N" + String(note) + "_";
+      layout.add(std::make_unique<AudioParameterInt>(
+          prefix + note_signifier + "NOTE", "Note", 20, 127, DISABLED_NOTE,
+          note_attributes));
+
+      layout.add(std::make_unique<AudioParameterInt>(
+          prefix + note_signifier + "VELOCITY", "Velocity", 1, 127,
+          DEFAULT_VELOCITY));
+
+      layout.add(std::make_unique<AudioParameterFloat>(
+          prefix + note_signifier + "OFFSET", "Offset",
+          NormalisableRange<float>(-0.5f, 0.49f, 0.01f), 0.0f,
+          offset_attributes));
+
+      layout.add(std::make_unique<AudioParameterFloat>(
+          prefix + note_signifier + "LENGTH", "Length",
+          NormalisableRange<float>(0.08f, STEP_SEQ_MAX_LENGTH, 0.01f, 0.5f),
+          static_cast<float>(DEFAULT_LENGTH)));
+    }
+  }
 
   return layout;
 }
@@ -183,8 +294,22 @@ bool AudioPluginAudioProcessor::isBusesLayoutSupported(
 }
 
 void AudioPluginAudioProcessor::hiResTimerCallback() {
-  // MARK: arp logic
+  // MARK: arpseq logic
   constexpr double deltaTime = HIRES_TIMER_INTERVAL_MS / 1000.0;
+
+  // apply parameters
+  for (int i = 0; i < STEP_SEQ_MAX_LENGTH; ++i) {
+    auto step = arpseq.getSeq().getStepAtIndex(i);
+    step.enabled = static_cast<bool>(*(seqStepEnabledParam[i]));
+
+    for (int j = 0; j < POLYPHONY; ++j) {
+      step.notes[j].number = static_cast<int>(*(seqStepNoteParam[i][j]));
+      step.notes[j].velocity = static_cast<int>(*(seqStepVelocityParam[i][j]));
+      step.notes[j].offset = *(seqStepOffsetParam[i][j]);
+      step.notes[j].length = *(seqStepLengthParam[i][j]);
+    }
+    arpseq.getSeq().setStepAtIndex(i, step);
+  }
 
   auto arp_type =
       static_cast<Sequencer::Arpeggiator::ArpType>(arpTypeParam->load());
@@ -192,19 +317,17 @@ void AudioPluginAudioProcessor::hiResTimerCallback() {
   float gate = arpGateParam->load();
   auto resolution =
       static_cast<Sequencer::Part::Resolution>(arpResolutionParam->load());
-  bool bypass = static_cast<bool>(arpBypassParam->load());
   bool euclid_legato = static_cast<bool>(euclidLegatoParam->load());
   auto euclid_pattern = static_cast<Sequencer::Arpeggiator::EuclidPattern>(
       euclidPatternParam->load());
-  polyarp.getArp().setType(arp_type);
-  polyarp.getArp().setOctave(octave);
-  polyarp.getArp().setGate(gate);
-  polyarp.getArp().setResolution(resolution);
-  polyarp.getArp().setEuclidLegato(euclid_legato);
-  polyarp.getArp().setEuclidPattern(euclid_pattern);
-  this->setBypassed(bypass);
+  arpseq.getArp().setType(arp_type);
+  arpseq.getArp().setOctave(octave);
+  arpseq.getArp().setGate(gate);
+  arpseq.getArp().setResolution(resolution);
+  arpseq.getArp().setEuclidLegato(euclid_legato);
+  arpseq.getArp().setEuclidPattern(euclid_pattern);
 
-  polyarp.process(deltaTime);
+  arpseq.process(deltaTime);
 }
 
 void AudioPluginAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer,
@@ -236,21 +359,19 @@ void AudioPluginAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer,
     // ..do something to the data...
   }
 
-  // MARK: process MIDI
+  // MARK: process incoming MIDI messages
 
-  if (!bypassed) {
-    for (const auto metadata : midiMessages) {
-      auto message = metadata.getMessage();
-      auto time_stamp_in_seconds =
-          message.getTimeStamp() / getSampleRate() + lastCallbackTime;
+  for (const auto metadata : midiMessages) {
+    auto message = metadata.getMessage();
+    auto time_stamp_in_seconds =
+        message.getTimeStamp() / getSampleRate() + lastCallbackTime;
 
-      if (message.isNoteOn()) {
-        message.setTimeStamp(time_stamp_in_seconds);
-        polyarp.handleNoteOn(message);
-      } else if (message.isNoteOff()) {
-        message.setTimeStamp(time_stamp_in_seconds);
-        polyarp.handleNoteOff(message);
-      }
+    if (message.isNoteOn()) {
+      message.setTimeStamp(time_stamp_in_seconds);
+      arpseq.handleNoteOn(message);
+    } else if (message.isNoteOff()) {
+      message.setTimeStamp(time_stamp_in_seconds);
+      arpseq.handleNoteOff(message);
     }
   }
 
@@ -258,38 +379,35 @@ void AudioPluginAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer,
 
   // generate MIDI start/stop/continue messages by querying DAW transport
   // also set bpm
-  if (this->wrapperType ==
-      juce::AudioProcessor::WrapperType::wrapperType_VST3) {
-    if (auto dawPlayHead = getPlayHead()) {
-      if (auto positionInfo = dawPlayHead->getPosition()) {
-        polyarp.setBpm(positionInfo->getBpm().orFallback(120.0));
-        polyarp.setSyncToHost(positionInfo->getIsPlaying());
+  // if (this->wrapperType ==
+  //     juce::AudioProcessor::WrapperType::wrapperType_VST3) {
+  //   if (auto dawPlayHead = getPlayHead()) {
+  //     if (auto positionInfo = dawPlayHead->getPosition()) {
+  //       arpseq.setBpm(positionInfo->getBpm().orFallback(120.0));
+  //       arpseq.setSyncToHost(positionInfo->getIsPlaying());
 
-        double quarter_note = positionInfo->getPpqPosition().orFallback(0.0);
-        int ppq = static_cast<int>(quarter_note * E3_PPQ);
+  //       double quarter_note = positionInfo->getPpqPosition().orFallback(0.0);
+  //       int ppq = static_cast<int>(quarter_note * E3_PPQ);
 
-        if ((ppq % TICKS_PER_16TH) == 0) {
-          // start synced to daw (this looks very messy lol)
-          if (polyarp.getSyncToHost()) {
-            if (!polyarp.isRunning() && polyarp.shouldBeRunning()) {
-              polyarp.start(lastCallbackTime);
-            }
-          }
-        }
-      }
-    }
-  }
+  //       if ((ppq % TICKS_PER_16TH) == 0) {
+  //         // start synced to daw (this looks very messy lol)
+  //         if (arpseq.getSyncToHost()) {
+  //           if (!arpseq.isRunning() && arpseq.shouldBeRunning()) {
+  //             arpseq.start(lastCallbackTime);
+  //           }
+  //         }
+  //       }
+  //     }
+  //   }
+  // }
 
-  // discard input MIDI messages if arp is enabled
-  if (polyarp.shouldBeRunning()) {
-    midiMessages.clear();
-  }
+  // discard input MIDI messages
+  midiMessages.clear();
 
-  // TODO: merge MIDI from seq and keyboard using a separate VoiceAssigner
-  // module
   // overwrite MIDI buffer
   arpMidiCollector.removeNextBlockOfMessages(midiMessages, getBlockSize());
   // guiMidiCollector.removeNextBlockOfMessages(midiMessages, getBlockSize());
+
   // visualize MIDI in all channels and manual trigger
   keyboardState.processNextMidiBuffer(midiMessages, 0, getBlockSize(), true);
 }

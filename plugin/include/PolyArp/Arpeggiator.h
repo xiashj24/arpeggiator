@@ -1,9 +1,6 @@
 #pragma once
 #include "PolyArp/Part.h"
-
-// TODO: integrate with global swing and groove
-
-// TODO: increase code reuse by [[fallthrough]];
+#include "PolyArp/KeyboardState.h"
 
 namespace Sequencer {
 
@@ -93,9 +90,7 @@ public:
     _2_15
   };
 
-  // arp will reset when step index reach length
-  // make sure ARP_MAX_LENGTH * TICKS_PER_STEP do not overflow or weird shit
-  // will happen
+  // step index will wrap to 0 after reaching ARP_MAX_LENGTH
   static constexpr int ARP_MAX_LENGTH = 65536;
 
   Arpeggiator(int channel,
@@ -108,11 +103,12 @@ public:
         type_(type),
         gate_(gate),
         octave_(octave),
-        last_note_number_(DUMMY_NOTE),
+        lastNoteNumber_(DUMMY_NOTE),
         rising_(true),
-        euclid_legato_(false),
-        current_octave_(0) {
-    shuffled_note_list.reserve(128);
+        euclidLegato_(false),
+        currentOctave_(0) {
+    shuffledNoteList_.reserve(128);
+    stop();
   }
 
   void setType(ArpType type) { type_ = type; }
@@ -124,59 +120,67 @@ public:
   void setGate(float gate) { gate_ = gate; }
 
   void handleNoteOn(juce::MidiMessage noteOn) {
-    keyboard_.handleNoteOn(noteOn);
+    // keyboard_.handleNoteOn(noteOn);
+    (void)noteOn;
     shuffleNotesWithOctave();
   }
 
   void handleNoteOff(juce::MidiMessage noteOff) {
-    if (!latch_) {
-      keyboard_.handleNoteOff(noteOff);
+    (void)noteOff;
 
-      // automatic stop when all notes are off
-      if (keyboard_.getNumNotesPressed() == 0) {
-        stop();
-      } else {
-        shuffleNotesWithOctave();
-      }
+    // if (!latch_) {
+    // keyboard_.handleNoteOff(noteOff);
+
+    // automatically stop when all notes are off
+    if (keyboard_.getNumNotesPressed() == 0) {
+      stop();
+    } else {
+      shuffleNotesWithOctave();
     }
   }
 
-  int getNumNotesPressed() const { return keyboard_.getNumNotesPressed(); }
-
-  void setLatchOn() { latch_ = true; }
-
-  void setLatchOff() {
-    latch_ = false;
-    stop();
-  }
-
-  void setEuclidLegato(bool enabled) { euclid_legato_ = enabled; }
-
-  void stop() {
+  // note: calling this function has no effect if arp is not running
+  void stop(bool immediateNoteOff = false) {
     keyboard_.reset();
-    Part::setEnabled(false);
-    // Part::sendNoteOffNow();
+
+    // if (!isMuted()) {
+    setMuted(true);
+    if (immediateNoteOff) {
+      sendNoteOffNow();
+    }
+    // }
   }
+
+  void setEuclidLegato(bool enabled) { euclidLegato_ = enabled; }
+
+  // will restart from 0 if already running
+  void start() {
+    if (keyboard_.getNumNotesPressed() > 0) {
+      reset();
+      setMuted(false);
+    }
+  }
+
+  // bool isRunning() const { return isMuted(); }
 
 private:
   KeyboardState keyboard_;
   ArpType type_;
   float gate_;
   int octave_;
-  int last_note_number_;
+  int lastNoteNumber_;
 
   bool rising_;
-  bool latch_;
 
   // euclidean rhythm generator
-  int euclid_fill_;  // pulses
-  int euclid_length_;
-  int euclid_rotate_;
-  bool euclid_legato_;
+  int euclidFill_;  // pulses
+  int euclidLength_;
+  int euclidRotate_;
+  bool euclidLegato_;
 
   // implementation
-  std::vector<int> shuffled_note_list;  // optimize: minimize about reallocation
-  int current_octave_;
+  std::vector<int> shuffledNoteList_;  // optimize: minimize reallocation
+  int currentOctave_;
 
   void shuffleNotesWithOctave();
 

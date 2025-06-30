@@ -1,47 +1,122 @@
 #include "PolyArp/PluginEditor.h"
 #include "PolyArp/PluginProcessor.h"
 
-#define BUTTON_WIDTH 60
-#define BUTTON_HEIGHT 30
-#define KNOB_SPACING 30
-
-#define KNOB_HEIGHT 90
-#define KNOB_WIDTH 70
-#define KNOB_TEXT_HEIGHT 20
-
 namespace audio_plugin {
 AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(
     AudioPluginAudioProcessor& p)
     : AudioProcessorEditor(&p),
       processorRef(p),
       onScreenKeyboard(p.keyboardState,
-                       juce::MidiKeyboardComponent::horizontalKeyboard) {
+                       juce::MidiKeyboardComponent::horizontalKeyboard),
+      sequencerComponent(p) {
   juce::ignoreUnused(processorRef);
-  // Make sure that before the constructor has finished, you've set the
-  // editor's size to whatever you need it to be.
-  setSize(800, 300);
+
+  setSize(1250, 780);
   setResizable(true, true);
 
-  bypassButton.setButtonText("Bypass");
-  bypassButton.setClickingTogglesState(true);
-  bypassButton.addShortcut(juce::KeyPress('b'));
-  bypassButton.setTooltip("bypass arpeggiator (b)");
-  bypassButton.setColour(juce::TextButton::ColourIds::buttonOnColourId,
-                         juce::Colours::orangered);
-  addAndMakeVisible(bypassButton);
-  bypassAttachment = std::make_unique<ButtonAttachment>(
-      processorRef.parameters, "ARP_BYPASS", bypassButton);
-
-  latchButton.setButtonText("Latch");
-  latchButton.setClickingTogglesState(true);
-  latchButton.addShortcut(juce::KeyPress('l'));
-  latchButton.setTooltip("toggle latch on/off (l)");
-  latchButton.setColour(juce::TextButton::ColourIds::buttonOnColourId,
-                        juce::Colours::orangered);
-  latchButton.onClick = [this]() {
-    processorRef.polyarp.setLatch(latchButton.getToggleState());
+  playButton.setButtonText(juce::String::fromUTF8("⏯Play"));
+  playButton.setClickingTogglesState(true);
+  playButton.setColour(juce::TextButton::ColourIds::buttonOnColourId,
+                       juce::Colours::orangered);
+  playButton.addShortcut(juce::KeyPress(juce::KeyPress::spaceKey));
+  playButton.setTooltip("toggle play and pause (space)");
+  playButton.onClick = [this] {
+    processorRef.arpseq.toggleSequencerPlayback();
   };
-  addAndMakeVisible(latchButton);
+  addAndMakeVisible(playButton);
+
+  stopButton.setButtonText(juce::String::fromUTF8("⏹Stop"));
+  stopButton.addShortcut(juce::KeyPress('s'));
+  stopButton.setTooltip("stop playback and move to start position (s)");
+  stopButton.onClick = [this] {
+    processorRef.arpseq.startSequencer(true);
+    processorRef.arpseq.stopSequencer();
+    playButton.setToggleState(false,
+                              juce::NotificationType::dontSendNotification);
+  };
+  addAndMakeVisible(stopButton);
+
+  recordButton.setButtonText(juce::String::fromUTF8("⏺Rec"));
+  recordButton.setClickingTogglesState(true);
+  recordButton.addShortcut(juce::KeyPress('r'));
+  recordButton.setTooltip("toggle real-time recording (r)");
+  recordButton.setColour(juce::TextButton::ColourIds::buttonOnColourId,
+                         juce::Colours::orangered);
+  recordButton.onClick = [this] {
+    const bool should_be_recording = recordButton.getToggleState();
+    processorRef.arpseq.setSequencerArmed(should_be_recording);
+    if (should_be_recording) {
+      keytriggerButton.setToggleState(false,
+                                      juce::NotificationType::sendNotification);
+    }
+  };
+  addAndMakeVisible(recordButton);
+
+  quantizeButton.setButtonText("Quantize");
+  quantizeButton.setClickingTogglesState(true);
+  quantizeButton.setTooltip(
+      "quantize note-on timing for real-time recording (q)");
+  quantizeButton.addShortcut(juce::KeyPress('q'));
+  quantizeButton.setColour(juce::TextButton::ColourIds::buttonOnColourId,
+                           juce::Colours::orangered);
+  quantizeButton.onClick = [this] {
+    processorRef.arpseq.setQuantizeRec(quantizeButton.getToggleState());
+  };
+  addAndMakeVisible(quantizeButton);
+
+  keytriggerButton.setButtonText("Key Trigger");
+  keytriggerButton.setClickingTogglesState(true);
+  keytriggerButton.setTooltip("start sequencer playback on first key on (k)");
+  keytriggerButton.addShortcut(juce::KeyPress('k'));
+  keytriggerButton.setColour(juce::TextButton::ColourIds::buttonOnColourId,
+                             juce::Colours::orangered);
+
+  keytriggerButton.onClick = [this] {
+    bool should_keytrigger = keytriggerButton.getToggleState();
+    processorRef.arpseq.setKeyTrigger(should_keytrigger);
+    if (should_keytrigger) {
+      recordButton.setToggleState(false, juce::sendNotification);
+      playButton.setToggleState(false, juce::sendNotification);
+    }
+  };
+
+  addAndMakeVisible(keytriggerButton);
+
+  keytriggerModeSelector.addItem("Retrigger (Mono)", 1);
+  keytriggerModeSelector.addItem("Transpose (Mono Legato)", 2);
+  keytriggerModeSelector.addItem("First (Poly)", 3);
+  keytriggerModeSelector.onChange = [this] {
+    processorRef.arpseq.setKeytriggerMode(
+        static_cast<Sequencer::ArpSeq::KeytriggerMode>(
+            keytriggerModeSelector.getSelectedId() - 1));
+  };
+  addAndMakeVisible(keytriggerModeSelector);
+  keytriggerModeSelector.setSelectedId(
+      1, juce::NotificationType::sendNotification);
+
+  holdButton.setButtonText("Hold");
+  holdButton.setClickingTogglesState(true);
+  holdButton.addShortcut(juce::KeyPress('h'));
+  holdButton.setTooltip(
+      "act as sustain pedal when arp is off, act as latch control when arp is "
+      "on (h)");
+  holdButton.setColour(juce::TextButton::ColourIds::buttonOnColourId,
+                       juce::Colours::orangered);
+  holdButton.onClick = [this]() {
+    processorRef.arpseq.setHold(holdButton.getToggleState());
+  };
+  addAndMakeVisible(holdButton);
+
+  arpButton.setButtonText("Arp");
+  arpButton.setClickingTogglesState(true);
+  arpButton.addShortcut(juce::KeyPress('a'));
+  arpButton.setTooltip("Toggle arpeggiator on/off (a)");
+  arpButton.setColour(juce::TextButton::ColourIds::buttonOnColourId,
+                      juce::Colours::orangered);
+  arpButton.onClick = [this] {
+    processorRef.arpseq.setArp(arpButton.getToggleState());
+  };
+  addAndMakeVisible(arpButton);
 
   typeLabel.setText("Arp Type", juce::NotificationType::dontSendNotification);
   typeLabel.setJustificationType(juce::Justification::centredBottom);
@@ -124,10 +199,26 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(
     bpmSlider.setValue(BPM_DEFAULT);
     bpmSlider.setDoubleClickReturnValue(true, BPM_DEFAULT);
     bpmSlider.onValueChange = [this] {
-      processorRef.polyarp.setBpm(bpmSlider.getValue());
+      processorRef.arpseq.setBpm(bpmSlider.getValue());
     };
     addAndMakeVisible(bpmSlider);
   }
+
+  swingLabel.setText("Swing: ", juce::NotificationType::dontSendNotification);
+  swingLabel.attachToComponent(&swingSlider, true);
+  swingSlider.setSliderStyle(juce::Slider::SliderStyle::LinearHorizontal);
+  swingSlider.setTextBoxStyle(juce::Slider::TextBoxLeft, false, 40,
+                              BUTTON_HEIGHT);
+  swingSlider.setRange(-SWING_MAX, SWING_MAX, 0.01);
+  swingSlider.setValue(0.0);
+  swingSlider.setDoubleClickReturnValue(true, 0.0);
+  swingSlider.onValueChange = [this] {
+    processorRef.arpseq.setSwing(swingSlider.getValue());
+  };
+  addAndMakeVisible(swingSlider);
+
+  addAndMakeVisible(sequencerViewport);
+  sequencerViewport.setViewedComponent(&sequencerComponent, false);
 
   addAndMakeVisible(onScreenKeyboard);
 }
@@ -142,20 +233,35 @@ void AudioPluginAudioProcessorEditor::paint(juce::Graphics& g) {
 }
 
 void AudioPluginAudioProcessorEditor::resized() {
-  // This is generally where you'll want to lay out the positions of any
-  // subcomponents in your editor..
+  // MARK: layout
   auto bounds = getBounds();
   onScreenKeyboard.setBounds(bounds.removeFromBottom(90));
 
   auto utility_bar = bounds.removeFromBottom(BUTTON_HEIGHT + 20).reduced(10);
 
-  bypassButton.setBounds(utility_bar.removeFromLeft(BUTTON_WIDTH));
+  playButton.setBounds(utility_bar.removeFromLeft(BUTTON_WIDTH));
   utility_bar.removeFromLeft(10);
-  latchButton.setBounds(utility_bar.removeFromLeft(BUTTON_WIDTH));
-  utility_bar.removeFromLeft(50);
-  bpmSlider.setBounds(utility_bar.removeFromLeft(200));
+  stopButton.setBounds(utility_bar.removeFromLeft(BUTTON_WIDTH));
+  utility_bar.removeFromLeft(10);
+  recordButton.setBounds(utility_bar.removeFromLeft(BUTTON_WIDTH));
+  utility_bar.removeFromLeft(10);
+  quantizeButton.setBounds(utility_bar.removeFromLeft(BUTTON_WIDTH));
+  utility_bar.removeFromLeft(10);
+  keytriggerButton.setBounds(utility_bar.removeFromLeft(BUTTON_WIDTH));
+  utility_bar.removeFromLeft(10);
+  keytriggerModeSelector.setBounds(utility_bar.removeFromLeft(180));
+  utility_bar.removeFromLeft(30);
+  arpButton.setBounds(utility_bar.removeFromLeft(BUTTON_WIDTH));
+  utility_bar.removeFromLeft(10);
+  holdButton.setBounds(utility_bar.removeFromLeft(BUTTON_WIDTH));
 
-  auto knob_bar = bounds.reduced(30).removeFromTop(KNOB_HEIGHT);
+  utility_bar.removeFromLeft(50);
+  bpmSlider.setBounds(utility_bar.removeFromLeft(180));
+  utility_bar.removeFromLeft(60);
+  swingSlider.setBounds(utility_bar.removeFromLeft(140));
+  utility_bar.removeFromLeft(10);
+
+  auto knob_bar = bounds.removeFromTop(KNOB_HEIGHT + 80).reduced(30);
   typeKnob.setBounds(knob_bar.removeFromLeft(KNOB_WIDTH));
   knob_bar.removeFromLeft(KNOB_SPACING);
   octaveKnob.setBounds(knob_bar.removeFromLeft(KNOB_WIDTH));
@@ -167,5 +273,7 @@ void AudioPluginAudioProcessorEditor::resized() {
   euclidPatternKnob.setBounds(knob_bar.removeFromLeft(KNOB_WIDTH));
   knob_bar.removeFromLeft(KNOB_SPACING);
   euclidLagatoButton.setBounds(knob_bar.removeFromLeft(KNOB_WIDTH));
+
+  sequencerViewport.setBounds(bounds.reduced(30));
 }
 }  // namespace audio_plugin

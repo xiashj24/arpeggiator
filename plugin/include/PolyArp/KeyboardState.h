@@ -66,9 +66,12 @@ public:
     return static_cast<int>(activeNoteStack_.size());
   }
 
+  bool isEmpty() const { return getNumNotesPressed() == 0; }
+
   // APIs for arpeggiator
   const auto& getNoteStack() const { return activeNoteStack_; }
 
+  // caller is responsible to check getNumNotesPressed() > 0
   Note getLowestNote() const {
     jassert(!activeNoteStack_.empty());
 

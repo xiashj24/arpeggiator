@@ -1,7 +1,7 @@
 #pragma once
 
 #include <juce_audio_processors/juce_audio_processors.h>
-#include "PolyArp/PolyArp.h"
+#include "PolyArp/ArpSeq.h"
 
 namespace audio_plugin {
 class AudioPluginAudioProcessor : public juce::AudioProcessor,
@@ -28,18 +28,6 @@ public:
   bool isMidiEffect() const override;
   double getTailLengthSeconds() const override;
 
-  void setBypassed(bool shouldBypass) {
-    if (shouldBypass && !bypassed) {
-      polyarp.getArp().stop();
-    }
-    if (!shouldBypass && bypassed) {
-      keyboardState.allNotesOff(0);
-    }
-    bypassed = shouldBypass;
-  }
-
-  bool isBypassed() const { return bypassed.load(); }
-
   int getNumPrograms() override;
   int getCurrentProgram() override;
   void setCurrentProgram(int index) override;
@@ -51,7 +39,7 @@ public:
 
   void hiResTimerCallback() override final;
 
-  Sequencer::PolyArp polyarp;
+  Sequencer::ArpSeq arpseq;
 
   juce::MidiKeyboardState keyboardState;  // MIDI visualizer
 
@@ -61,19 +49,24 @@ public:
 private:
   juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
 
-  std::atomic<float>* arpTypeParam = nullptr;
-  std::atomic<float>* arpOctaveParam = nullptr;
-  std::atomic<float>* arpGateParam = nullptr;
-  std::atomic<float>* arpResolutionParam = nullptr;
+  // arp parameters
+  std::atomic<float>* arpTypeParam;
+  std::atomic<float>* arpOctaveParam;
+  std::atomic<float>* arpGateParam;
+  std::atomic<float>* arpResolutionParam;
+  std::atomic<float>* euclidPatternParam;
+  std::atomic<float>* euclidLegatoParam;
 
-  std::atomic<float>* arpBypassParam = nullptr;
-
-  std::atomic<float>* euclidPatternParam = nullptr;
-  std::atomic<float>* euclidLegatoParam = nullptr;
+  // seq parameters
+  std::atomic<float>* seqStepEnabledParam[STEP_SEQ_MAX_LENGTH];
+  std::atomic<float>* seqStepNoteParam[STEP_SEQ_MAX_LENGTH][POLYPHONY];
+  std::atomic<float>* seqStepVelocityParam[STEP_SEQ_MAX_LENGTH][POLYPHONY];
+  std::atomic<float>* seqStepOffsetParam[STEP_SEQ_MAX_LENGTH][POLYPHONY];
+  std::atomic<float>* seqStepLengthParam[STEP_SEQ_MAX_LENGTH][POLYPHONY];
 
   juce::MidiMessageCollector arpMidiCollector;
   double lastCallbackTime;
-  std::atomic<bool> bypassed;
+  // std::atomic<bool> bypassed;
 
   JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AudioPluginAudioProcessor)
 };
