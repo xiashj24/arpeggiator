@@ -1,6 +1,7 @@
 #pragma once
 #include "PolyArp/Part.h"
 #include "PolyArp/KeyboardState.h"
+#include "PolyArp/NoteLimiter.h"
 
 // this class serve as a data management layer between the core sequencer logic
 // (Part.cpp) and global seq/arp business logic
@@ -8,6 +9,10 @@
 // TODO: track utilities (randomize, humanize, rotate, etc.)
 
 namespace Sequencer {
+
+static inline bool ApproximatelyEqual(float x, float y) {
+  return std::abs(x - y) < 0.0001f;
+}
 
 template <int POLYPHONY>
 struct PolyStep {
@@ -24,17 +29,18 @@ struct PolyStep {
   }
 
   void sort() {
-    std::sort(&notes[0], &notes[POLYPHONY],
-              [](const Note& a, const Note& b) { return a.number > b.number; });
+    std::sort(&notes[0], &notes[POLYPHONY], [](const Note& a, const Note& b) {
+      if (ApproximatelyEqual(a.offset, b.offset))
+        return a.number < b.number;
+      return a.offset < b.offset;
+    });
   }
 
-  void align(int velocity = DEFAULT_VELOCITY,
-             float offset = 0.f,
-             float length = DEFAULT_LENGTH) {
+  void alignWith(Note other) {
     for (auto& note : notes) {
-      note.velocity = velocity;
-      note.offset = offset;
-      note.length = length;
+      note.velocity = other.velocity;
+      note.offset = other.offset;
+      note.length = other.length;
     }
   }
 
@@ -48,43 +54,59 @@ struct PolyStep {
     return is_empty;
   }
 
-  void addNote(Note new_note) {
-    if (!enabled) {  // when enabled through live rec
+  // TODO: take into account polyphony here? add a parameter called
+  // maxNumberVoices here
+  void addNote(Note newNote) {
+    if (!enabled) {  // step enabled through realtime recording
       reset();
-      notes[0] = new_note;
-      align(new_note.velocity, new_note.offset, new_note.length);
+      notes[0] = newNote;
+      alignWith(newNote);
       enabled = true;
       return;
     };
 
-    // note: this should be consistent with the synth's note stealing algorithm
+    // note: be consistent with note stealing policy in NoteLimiter
+    // same note replacement -> search free slot -> LRU replacement
     for (auto& note : notes) {
-      if (note.number == new_note.number) {
-        note = new_note;
-        return;
-      }
-    }
-
-    for (auto& note : notes) {
-      if (note.number <= DISABLED_NOTE) {
-        note = new_note;
+      if (note.number == newNote.number) {
+        note = newNote;
         sort();
         return;
       }
     }
 
-    int closest_index = 0;
-    int closest_distance = 127;
-    for (int i = 0; i < POLYPHONY; ++i) {
-      int distance = std::abs(notes[i].number - new_note.number);
-      if (distance <= closest_distance) {
-        closest_distance = distance;
-        closest_index = i;
+    // take voice limit into account here?
+    for (auto& note : notes) {
+      if (note.number <= DISABLED_NOTE) {
+        note = newNote;
+        sort();
+        return;
       }
     }
 
-    notes[closest_index] = new_note;
-    // no need to sort in this case?
+    // LRU replacement
+    // int closest_index = 0;
+    // int closest_distance = 127;
+    // for (int i = 0; i < POLYPHONY; ++i) {
+    //   int distance = std::abs(notes[i].number - newNote.number);
+    //   if (distance <= closest_distance) {
+    //     closest_distance = distance;
+    //     closest_index = i;
+    //   }
+    // }
+
+    int lru_index = 0;
+    float min_offset = notes[0].offset;
+    for (int i = 1; i < POLYPHONY; ++i) {
+      if (notes[i].offset < min_offset) {
+        min_offset = notes[i].offset;
+        lru_index = i;
+      }
+    }
+
+    notes[lru_index] = newNote;
+    sort();
+    return;
   }
 
   int getLowestNoteNumber() const {
@@ -120,12 +142,13 @@ public:
   using StepType = PolyStep<POLYPHONY>;
 
   PolyTrack(int channel,
-            const KeyboardState& keyboard,
+            const NoteLimiter& noteLimiter,
             int length = STEP_SEQ_DEFAULT_LENGTH,
             Resolution resolution = _16th)
       : Part(channel, length, resolution),
-        keyboardRef(keyboard),
-        interval_(0) {}
+        noteLimiterRef(noteLimiter),
+        interval_(0),
+        overdub_(false) {}
 
   StepType getStepAtIndex(int index) const { return steps_[index]; }
 
@@ -147,12 +170,18 @@ public:
 
   void setTransposeInterval(int semitones) { interval_ = semitones; }
 
+  void setOverdub(bool enabled) { overdub_ = enabled; }
+
 private:
   StepType steps_[STEP_SEQ_MAX_LENGTH];
 
-  const KeyboardState& keyboardRef;
+  // const KeyboardState& keyboardRef;
+
+  const NoteLimiter& noteLimiterRef;
 
   int interval_;
+
+  bool overdub_;
 
   int getStepRenderTick(int index) const override final {
     float offset_min = 0.0f;
@@ -165,23 +194,20 @@ private:
   void renderStep(int index) override final {
     auto& step = steps_[index];
     if (step.enabled) {
-      // smart overdub (remove notes held by keyboard)
-      // note: this is a shortcut for proper assigner, will rework later)
-      if (keyboardRef.getLastChannel() == this->getChannel()) {
+      // overdub (mute active notes from note limiter)
+      if (overdub_) {
         for (int i = 0; i < POLYPHONY; ++i) {
-          if (keyboardRef.isKeyDown(step.notes[i].number)) {
+          // order matters: sort by offset and then by note number
+          if (!noteLimiterRef.tryNoteOn(step.notes[i].number,
+                                        Priority::Sequencer)) {
             step.notes[i].number = DISABLED_NOTE;
           }
         }
-      }
 
-      if (step.isEmpty()) {
-        step.reset();
-      }
-
-      // in case note stealing disables the step
-      if (!step.enabled) {
-        return;
+        if (step.isEmpty()) {
+          step.reset();
+          return;
+        }
       }
 
       // probability check
@@ -192,8 +218,7 @@ private:
       // render all notes in the step
       for (int j = 0; j < POLYPHONY; ++j) {
         // render note
-        renderNote(index,
-                   steps_[index].notes[j].transposed(interval_));
+        renderNote(index, steps_[index].notes[j].transposed(interval_));
       }
     }
   }

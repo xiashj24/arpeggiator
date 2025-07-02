@@ -120,17 +120,12 @@ public:
   void setGate(float gate) { gate_ = gate; }
 
   void handleNoteOn(juce::MidiMessage noteOn) {
-    // keyboard_.handleNoteOn(noteOn);
-    (void)noteOn;
+    keyboard_.handleNoteOn(noteOn);
     shuffleNotesWithOctave();
   }
 
   void handleNoteOff(juce::MidiMessage noteOff) {
-    (void)noteOff;
-
-    // if (!latch_) {
-    // keyboard_.handleNoteOff(noteOff);
-
+    keyboard_.handleNoteOff(noteOff);
     // automatically stop when all notes are off
     if (keyboard_.getNumNotesPressed() == 0) {
       stop();
@@ -140,6 +135,7 @@ public:
   }
 
   // note: calling this function has no effect if arp is not running
+  // mute but still ticking to recall note off
   void stop(bool immediateNoteOff = false) {
     keyboard_.reset();
 
@@ -154,6 +150,7 @@ public:
   void setEuclidLegato(bool enabled) { euclidLegato_ = enabled; }
 
   // will restart from 0 if already running
+  // no effect when no notes are pressed
   void start() {
     if (keyboard_.getNumNotesPressed() > 0) {
       reset();

@@ -10,7 +10,7 @@ void Part::renderNote(int index, Note note) {
   if (note.number <= DISABLED_NOTE)
     return;
 
-  DBG("rendered note number: " << note.number);
+  // DBG("rendered note number: " << note.number);
 
   int note_on_tick =
       static_cast<int>((index + note.offset) * getTicksPerStep());

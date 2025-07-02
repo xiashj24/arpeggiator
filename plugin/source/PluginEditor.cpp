@@ -11,7 +11,7 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(
       sequencerComponent(p) {
   juce::ignoreUnused(processorRef);
 
-  setSize(1250, 780);
+  setSize(1280, 780);
   setResizable(true, true);
 
   playButton.setButtonText(juce::String::fromUTF8("⏯Play"));
@@ -217,6 +217,20 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(
   };
   addAndMakeVisible(swingSlider);
 
+  polyphonyLabel.setText("Voice: ",
+                         juce::NotificationType::dontSendNotification);
+  polyphonyLabel.attachToComponent(&polyphonySlider, true);
+  polyphonySlider.setSliderStyle(juce::Slider::SliderStyle::IncDecButtons);
+  polyphonySlider.setTextBoxStyle(juce::Slider::TextBoxLeft, false, 30,
+                                  BUTTON_HEIGHT);
+  polyphonySlider.setRange(1, 10, 1);
+  polyphonySlider.setValue(10);
+  polyphonySlider.onValueChange = [this] {
+    processorRef.arpseq.getNoteLimiter().setNumVoices(
+        static_cast<size_t>(polyphonySlider.getValue()));
+  };
+  addAndMakeVisible(polyphonySlider);
+
   addAndMakeVisible(sequencerViewport);
   sequencerViewport.setViewedComponent(&sequencerComponent, false);
 
@@ -260,6 +274,7 @@ void AudioPluginAudioProcessorEditor::resized() {
   utility_bar.removeFromLeft(60);
   swingSlider.setBounds(utility_bar.removeFromLeft(140));
   utility_bar.removeFromLeft(10);
+  polyphonySlider.setBounds(utility_bar.removeFromRight(80));
 
   auto knob_bar = bounds.removeFromTop(KNOB_HEIGHT + 80).reduced(30);
   typeKnob.setBounds(knob_bar.removeFromLeft(KNOB_WIDTH));

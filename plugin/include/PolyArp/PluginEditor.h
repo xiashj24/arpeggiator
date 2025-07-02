@@ -59,6 +59,9 @@ private:
   juce::Label swingLabel;
   juce::Slider swingSlider;
 
+  juce::Label polyphonyLabel;
+  juce::Slider polyphonySlider;
+
   using SliderAttachment = juce::AudioProcessorValueTreeState::SliderAttachment;
   using ButtonAttachment = juce::AudioProcessorValueTreeState::ButtonAttachment;
 

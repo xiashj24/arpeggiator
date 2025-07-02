@@ -3,6 +3,7 @@
 #include "PolyArp/Arpeggiator.h"
 #include "PolyArp/PolyTrack.h"
 #include "PolyArp/KeyboardState.h"
+#include "PolyArp/NoteLimiter.h"
 #include <juce_audio_devices/juce_audio_devices.h>  // juce::MidiMessageCollector
 
 #define BPM_DEFAULT 120
@@ -37,29 +38,59 @@ public:
         sequencerKeyTrigger_(false),
         seqStartTime_(0.0),
         seqPauseTime_(0.0),
-        arpEnabled_(false),
+        arpOn_(false),
         arpStartTime_(0.0),
         timeSinceStart_(0.0),
         hold_(false),
         arpeggiator_(1),
-        sequencer_(1, keyboard_, 16),
+        sequencer_(1, noteLimiter_, 16),
+        noteLimiter_(10),
         midiCollector_(midiCollector) {
     arpeggiator_.sendMidiMessage = [this](juce::MidiMessage msg) {
       // time translation
       int tick = static_cast<int>(msg.getTimeStamp());
       double real_time_stamp = arpStartTime_ + getOneTickTime() * tick;
-      sendMidiMessageThru(msg.withTimeStamp(real_time_stamp));
+      sendMidiMessageToOuput(msg.withTimeStamp(real_time_stamp));
     };
+    // MARK: seq out
     sequencer_.sendMidiMessage = [this](juce::MidiMessage msg) {
-      // time translation
+      // time translation (TODO: just use system time?)
       int tick = static_cast<int>(msg.getTimeStamp());
       double real_time_stamp = seqStartTime_ + getOneTickTime() * tick;
-      sendMidiMessageThru(msg.withTimeStamp(real_time_stamp));
-      // TODO: route to arpeggiator
+      msg.setTimeStamp(real_time_stamp);
+
+      if (msg.isNoteOn()) {
+        auto& note_on = msg;
+        int stolen_note = DUMMY_NOTE;
+        if (noteLimiter_.noteOn(note_on.getNoteNumber(), Priority::Sequencer,
+                                &stolen_note)) {
+          if (stolen_note != DUMMY_NOTE) {
+            auto note_off = juce::MidiMessage::noteOff(1, stolen_note);
+            note_off.setTimeStamp(note_on.getTimeStamp());
+            sendMidiMessageToArp(note_off);
+            // DBG("note off stolen note: " << stolen_note);
+          }
+          sendMidiMessageToArp(note_on);
+          // DBG("pass thru sequencer note on: " << note_on.getNoteNumber());
+        } else {
+          DBG("sequencer note on not triggered: " << note_on.getNoteNumber());
+        }
+      } else if (msg.isNoteOff()) {
+        auto& note_off = msg;
+        if (noteLimiter_.noteOff(note_off.getNoteNumber(),
+                                 Priority::Sequencer)) {
+          sendMidiMessageToArp(note_off);
+        } else {
+          DBG("sequencer note off not triggered: " << note_off.getNoteNumber());
+        }
+      }
+
+      DBG("Number Of active notes: " << noteLimiter_.getNumActiveVoices());
     };
 
+    // MARK: arp seq sync
     // sequencer_.onStep = [this](int) {
-    //   if (arpEnabled_) {
+    //   if (arpOn_) {
     //     startArpeggiator();
     //   }
     // };
@@ -122,14 +153,16 @@ public:
     }
   }
 
-  void setSequencerArmed(bool enabled) { sequencerArmed_ = enabled; }
+  void setSequencerArmed(bool enabled) {
+    sequencerArmed_ = enabled;
+    sequencer_.setOverdub(enabled);
+  }
   // bool isSequencerArmed() const { return sequencerArmed_; }
   void setQuantizeRec(bool enabled) { sequencerRecQuantized_ = enabled; }
 
   void handleNoteOn(juce::MidiMessage noteOn) {
     // book keeping
     keyboard_.handleNoteOn(noteOn);
-    arpeggiator_.handleNoteOn(noteOn);
     noteToStepIndex_[noteOn.getNoteNumber()] = sequencer_.getCurrentStepIndex();
 
     bool note_muted = false;
@@ -154,20 +187,29 @@ public:
       note_muted = true;
     }
 
-    // if sequencer is not running, start arp immediately if not already
-    // if (!sequencerIsTicking_) {
-    //   if (arpEnabled_) {
-    //     startArpeggiator();
-    //   }
-
+    // if (arpOn_) {
+    //   note_muted = true;
     // }
 
-    if (arpEnabled_) {
-      note_muted = true;
-    }
-
     if (!note_muted) {
-      sendMidiMessageThru(noteOn);
+      // check max note limit
+      int stolen_note = DUMMY_NOTE;
+
+      if (noteLimiter_.noteOn(noteOn.getNoteNumber(), Priority::Keyboard,
+                              &stolen_note)) {
+        if (stolen_note != DUMMY_NOTE) {
+          auto note_off = juce::MidiMessage::noteOff(1, stolen_note);
+          note_off.setTimeStamp(noteOn.getTimeStamp());
+          sendMidiMessageToArp(note_off);
+          DBG("note off stolen note: " << stolen_note);
+        }
+        sendMidiMessageToArp(noteOn);
+        DBG("pass thru keyboard note on: " << noteOn.getNoteNumber());
+      } else {
+        DBG("no available voices: " << noteOn.getNoteNumber());
+      }
+
+      DBG("Number Of active notes: " << noteLimiter_.getNumActiveVoices());
     }
   }
 
@@ -175,7 +217,7 @@ public:
       notifyProcessorSeqUpdate;
 
   // automatically stopped when all notes are off
-  void handleNoteOff(juce::MidiMessage noteOff) {
+  void handleNoteOff(juce::MidiMessage noteOff, bool recordingOn = true) {
     if (hold_) {
       return;
     }
@@ -183,31 +225,30 @@ public:
     // book keeping
     bool is_first_note =
         (keyboard_.getEarliestNote().number == noteOff.getNoteNumber());
+    bool is_last_note =
+        (keyboard_.getLatestNote().number == noteOff.getNoteNumber());
     auto matching_note_on = keyboard_.handleNoteOff(noteOff);
-    arpeggiator_.handleNoteOff(noteOff);
 
     bool note_muted = false;
 
-    if (keyboard_.isEmpty()) {  // MARK: all notes off
-      if (sequencerKeyTrigger_) {
-        stopSequencer();
-        // note_muted = true;
-      }
-    }
-
     // MARK: note off
     if (sequencerKeyTrigger_) {
-      if (keytriggerMode_ != KeytriggerMode::FirstKey) {
-        updateTransposeInterval();
-      } else {
+      if (keytriggerMode_ == KeytriggerMode::FirstKey) {
         if (is_first_note) {
           stopSequencer();
         }
+      } else if (keytriggerMode_ == KeytriggerMode::LastKey) {
+        updateTransposeInterval();
+        if (is_last_note) {
+          stopSequencer();
+        }
+      } else {  // transpose
+        updateTransposeInterval();
       }
     }
 
     // realtime rec
-    if (sequencerArmed_ && sequencerIsTicking_) {
+    if (recordingOn && sequencerArmed_ && sequencerIsTicking_) {
       auto new_note = calculateNoteFromNoteOnAndOff(matching_note_on, noteOff);
       int step_index = noteToStepIndex_[noteOff.getNoteNumber()];
 
@@ -219,33 +260,51 @@ public:
       notifyProcessorSeqUpdate(step_index, step);
     }
 
-    if (arpEnabled_) {
-      note_muted = true;
+    // if (arpOn_) {
+    //   note_muted = true;
+    // }
+
+    if (keyboard_.isEmpty()) {  // MARK: all notes off
+      if (sequencerKeyTrigger_) {
+        stopSequencer();
+        // note_muted = true;
+      }
     }
 
     if (!note_muted) {
-      sendMidiMessageThru(noteOff);
+      if (noteLimiter_.noteOff(noteOff.getNoteNumber(), Priority::Keyboard)) {
+        sendMidiMessageToArp(noteOff);
+        DBG("pass thru keyboard note off: " << noteOff.getNoteNumber());
+
+      } else {
+        DBG("note was not triggered or stolen: " << noteOff.getNoteNumber());
+      }
+
+      DBG("Number Of active notes: " << noteLimiter_.getNumActiveVoices());
     }
   }
 
   void setArp(bool enabled) {
-    arpEnabled_ = enabled;
+    arpOn_ = enabled;
 
-    // if (arpEnabled_) {
-    //   // transform held notes into arpeggio
-    //   sendNoteOffs();
-    //   // handleAllNotesOff();
-    //   startArpeggiator();
-    // } else {
-    //   arpeggiator_.stop();
-    // }
+    // TODO: disable noteLimiter when arp enabled?
+
+    // transform held notes into arpeggio on rising edge
+    if (arpOn_) {
+      sendAllNotesOffToOutput();
+      startArpeggiator();
+    } else {
+      stopArpeggiator();
+    }
   }
 
   void setHold(bool enabled) {
-    hold_ = enabled;
+    hold_ = enabled;  // caveat: do not place this before allNotesOff
 
     if (!hold_) {
-      // if (!arpEnabled_) {
+      allNotesOff();
+
+      // if (!arpOn_) {
       //   sendNoteOffs();
       // }
       // arpeggiator_.stop();
@@ -253,8 +312,6 @@ public:
       // if (sequencerKeyTrigger_) {
       //   stopSequencer();
       // }
-
-      handleAllNotesOff();
     }
   }
 
@@ -267,8 +324,9 @@ public:
     }
   }
 
-  Arpeggiator& getArp() { return arpeggiator_; }
+  auto& getArp() { return arpeggiator_; }
   auto& getSeq() { return sequencer_; }
+  auto& getNoteLimiter() { return noteLimiter_; }
 
   void setSwing(double amount) { swing_ = amount; }
 
@@ -282,7 +340,13 @@ public:
 
       // worry: if seq is stopped when arp is running, they might be out of sync
       if (sequencerIsTicking_) {
+        int current_index = sequencer_.getCurrentStepIndex();
+
         sequencer_.tick();
+
+        // in case smart overdub changes a step
+        notifyProcessorSeqUpdate(current_index,
+                                 sequencer_.getStepAtIndex(current_index));
       }
 
       // substraction is fine, but modulo feels safer
@@ -291,7 +355,6 @@ public:
   }
 
 private:
-  double bpm_;
   double getOneTickTime() const { return 15.0 / bpm_ / TICKS_PER_16TH; }
 
   double getOneTickTimeWithSwing() const {
@@ -305,22 +368,8 @@ private:
   // 0.0 (no swing) .. 1.0 (maximum swing)
   bool isOnStrongBeat() const {
     // TODO: rework this function to take into consideration both arp and seq
-    return sequencer_.isOnOddStep() % 2;
+    return sequencer_.isOnOddStep();
   }
-
-  // function-related variables
-  // note: can also use per track swing amount
-  double swing_;  // -0.75..0.75, move weak beats earlier/later
-
-  // sequencer states
-  bool sequencerShouldPlay_;
-  bool sequencerIsTicking_;
-  bool sequencerArmed_;
-  bool sequencerRecQuantized_;
-  bool sequencerKeyTrigger_;
-  KeytriggerMode keytriggerMode_;
-  double seqStartTime_;
-  double seqPauseTime_;
 
   // warning: be careful when you call this function!
   // must be called after keyboard book-keeping and startSequencer
@@ -348,21 +397,6 @@ private:
       }
     }
   }
-
-  // arpeggiator states
-  bool arpEnabled_;
-  double arpStartTime_;
-
-  // for both arp and seq
-  double timeSinceStart_;
-  bool hold_;
-
-  Arpeggiator arpeggiator_;
-  PolyTrack<POLYPHONY> sequencer_;
-
-  // real time recording
-  KeyboardState keyboard_;
-  int noteToStepIndex_[128];
 
   Note calculateNoteFromNoteOnAndOff(juce::MidiMessage noteOn,
                                      juce::MidiMessage noteOff) {
@@ -396,42 +430,96 @@ private:
             .length = static_cast<float>(length)};
   }
 
-  juce::MidiMessageCollector& midiCollector_;
-
   // note: this function has no effect if no note is being pressed
-  // void startArpeggiator() {
-  //   if (!arpeggiator_.isEnabled()) {
-  //     arpStartTime_ = GetSystemTime();
-  //     // timeSinceStart_ = 0.0;
-  //     arpeggiator_.start();
-  //   }
-  // }
+  // or arp already started
+  void startArpeggiator() {
+    if (arpeggiator_.isMuted()) {
+      arpStartTime_ = GetSystemTime();
+      // timeSinceStart_ = 0.0;
+      arpeggiator_.start();
+    }
+  }
 
-  void sendMidiMessageThru(juce::MidiMessage message) {
+  void stopArpeggiator() { arpeggiator_.stop(); }
+
+  void sendMidiMessageToArp(juce::MidiMessage message) {
+    if (message.isNoteOn()) {
+      arpeggiator_.handleNoteOn(message);
+      // if sequencer is not running, start arp immediately if not already
+      // if (!sequencerIsTicking_) {
+      if (arpOn_) {
+        startArpeggiator();
+      }
+      // }
+    } else if (message.isNoteOff()) {
+      arpeggiator_.handleNoteOff(message);
+    }
+    if (arpeggiator_.isMuted()) {
+      // warning: this is causing missing note offs!
+      sendMidiMessageToOuput(message);
+    }
+  }
+
+  void sendMidiMessageToOuput(juce::MidiMessage message) {
     message.setChannel(1);  // force channel 1
     midiCollector_.addMessageToQueue(message);
   }
 
-  void sendNoteOffs() {
+  void sendAllNotesOffToOutput() {
     double now = GetSystemTime();
-    const auto& note_stack = keyboard_.getNoteStack();
-    for (int note_number : note_stack) {
-      auto note_off = juce::MidiMessage::noteOff(1, note_number);
+    auto active_notes = noteLimiter_.getActiveNotes();
+    for (int note : active_notes) {
+      auto note_off = juce::MidiMessage::noteOff(1, note);
       note_off.setTimeStamp(now);
-      sendMidiMessageThru(note_off);
+      sendMidiMessageToOuput(note_off);
     }
   }
 
-  void handleAllNotesOff() {
+  // from note limiter
+  void allNotesOff() {
     double now = GetSystemTime();
-    auto note_stack = keyboard_.getNoteStack();
-    for (int note_number : note_stack) {
-      auto note_off = juce::MidiMessage::noteOff(1, note_number);
+    auto active_notes = keyboard_.getNoteStack();
+    // auto active_notes = noteLimiter_.getActiveNotes();
+
+    for (int note : active_notes) {
+      auto note_off = juce::MidiMessage::noteOff(1, note);
       note_off.setTimeStamp(now);
-      handleNoteOff(note_off);
+      handleNoteOff(note_off, false);
     }
     // keyboard_.reset();
   }
+
+  // function-related variables
+  double bpm_;
+  double swing_;  // -0.75..0.75, move weak beats earlier/later
+
+  // sequencer states
+  bool sequencerShouldPlay_;
+  bool sequencerIsTicking_;
+  bool sequencerArmed_;
+  bool sequencerRecQuantized_;
+  bool sequencerKeyTrigger_;
+  KeytriggerMode keytriggerMode_;
+  double seqStartTime_;
+  double seqPauseTime_;
+
+  // arpeggiator states
+  bool arpOn_;
+  double arpStartTime_;
+
+  // for both arp and seq
+  double timeSinceStart_;
+  bool hold_;
+
+  Arpeggiator arpeggiator_;
+  PolyTrack<POLYPHONY> sequencer_;
+  NoteLimiter noteLimiter_;
+
+  // real-time recording
+  KeyboardState keyboard_;
+  int noteToStepIndex_[128];
+
+  juce::MidiMessageCollector& midiCollector_;
 
   JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ArpSeq)
 };
