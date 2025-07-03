@@ -7,8 +7,8 @@
 // note: this class is appropriating the Note struct from the sequencer but
 // using only half of the fields, maybe there is a more graceful way to do that
 
-// API for arp feels weird, maybe they should just return note number or
-// std::pair
+// TODO: remove dependency on juce::MidiMessage, also use plain note number
+// instead of Note
 
 namespace Sequencer {
 
@@ -22,12 +22,18 @@ public:
   void handleNoteOn(juce::MidiMessage noteOn) {
     int note_number = noteOn.getNoteNumber();
     toggleNoteOff(noteOn.getNoteNumber());
+
+    if (activeNoteStack_.size() == 0) {  // first note
+      firstNote_.number = noteOn.getNoteNumber();
+      firstNote_.velocity = noteOn.getVelocity();
+    }
+
     activeNoteStack_.push_back(note_number);
     noteOns_[note_number] = noteOn;
     lastChannel_ = noteOn.getChannel();
   }
 
-  // return true if there was a valid note
+  // return true if successful
   bool toggleNoteOff(int note_number) {
     auto it = std::find(activeNoteStack_.begin(), activeNoteStack_.end(),
                         note_number);
@@ -40,14 +46,14 @@ public:
     }
   }
 
-  // returns the matching note on message
+  // returns the matched note on message
   juce::MidiMessage handleNoteOff(juce::MidiMessage noteOff) {
     auto note_number = noteOff.getNoteNumber();
 
     if (toggleNoteOff(note_number)) {
       return noteOns_[note_number];
     } else {
-      DBG("note on and note off mismatch!");
+      DBG("note on and note off mismatch (KeyboardState)");
       return juce::MidiMessage();
     }
   }
@@ -70,6 +76,9 @@ public:
 
   // APIs for arpeggiator
   const auto& getNoteStack() const { return activeNoteStack_; }
+
+  // first note is not necessarily 
+  Note getFirstNote() const { return firstNote_; }
 
   // caller is responsible to check getNumNotesPressed() > 0
   Note getLowestNote() const {
@@ -212,11 +221,12 @@ public:
     return velocity_sum / static_cast<int>(activeNoteStack_.size());
   }
 
-  // TODO: APIs for VoiceAssigner such as getLeastRecentUsedNote
+  // getLastVelocity()?
+
 private:
   std::vector<int> activeNoteStack_;  // keep track of pressed notes
   juce::MidiMessage noteOns_[128];    // hold actual note on messages
-
+  Note firstNote_;
   int lastChannel_;
 };
 }  // namespace Sequencer

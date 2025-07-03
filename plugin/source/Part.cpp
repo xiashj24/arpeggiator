@@ -60,7 +60,7 @@ void Part::renderMidiMessage(juce::MidiMessage message) {
 }
 
 void Part::reset(float start_index) {
-  // sendNoteOffNow();
+  sendNoteOffNow();
   midiQueue_.clear();
   tick_ = static_cast<int>(getTicksPerStep() * start_index);
   resolution_ = resolutionNew_;  // necessary?
@@ -81,7 +81,7 @@ void Part::sendNoteOffNow() {
        i < midiQueue_.getNumEvents(); ++i) {
     auto message = midiQueue_.getEventPointer(i)->message;
     if (message.isNoteOff()) {
-      message.setTimeStamp(tick_);  // this appears to have no effect
+      message.setTimeStamp(tick_);  // this appears to have no effect though
       sendMidiMessage(message);
     }
   }

@@ -44,7 +44,7 @@ private:
 
   // utility bar
   juce::TextButton playButton;
-  juce::TextButton stopButton;
+  juce::TextButton restButton;
   juce::TextButton recordButton;
   juce::TextButton quantizeButton;
   juce::TextButton keytriggerButton;

@@ -1,7 +1,7 @@
 #pragma once
 #include "PolyArp/Part.h"
 #include "PolyArp/KeyboardState.h"
-#include "PolyArp/NoteLimiter.h"
+#include "PolyArp/VoiceLimiter.h"
 
 // this class serve as a data management layer between the core sequencer logic
 // (Part.cpp) and global seq/arp business logic
@@ -28,12 +28,14 @@ struct PolyStep {
     notes[0].number = DEFAULT_NOTE;
   }
 
-  void sort() {
-    std::sort(&notes[0], &notes[POLYPHONY], [](const Note& a, const Note& b) {
-      if (ApproximatelyEqual(a.offset, b.offset))
-        return a.number < b.number;
-      return a.offset < b.offset;
-    });
+  void sortByNote() {
+    std::sort(std::begin(notes), std::end(notes),
+              [](const Note& a, const Note& b) { return a.number > b.number; });
+  }
+
+  void sortByOffset() {
+    std::sort(std::begin(notes), std::end(notes),
+              [](const Note& a, const Note& b) { return a.offset < b.offset; });
   }
 
   void alignWith(Note other) {
@@ -54,10 +56,8 @@ struct PolyStep {
     return is_empty;
   }
 
-  // TODO: take into account polyphony here? add a parameter called
-  // maxNumberVoices here
-  void addNote(Note newNote) {
-    if (!enabled) {  // step enabled through realtime recording
+  void addNote(Note newNote, int maxNumNotes = POLYPHONY) {
+    if (!enabled) {  // step enabled by realtime recording
       reset();
       notes[0] = newNote;
       alignWith(newNote);
@@ -65,26 +65,45 @@ struct PolyStep {
       return;
     };
 
-    // note: be consistent with note stealing policy in NoteLimiter
+    // note: be consistent with note stealing policy in VoiceLimiter
     // same note replacement -> search free slot -> LRU replacement
     for (auto& note : notes) {
       if (note.number == newNote.number) {
         note = newNote;
-        sort();
+        sortByNote();
         return;
       }
     }
 
-    // take voice limit into account here?
-    for (auto& note : notes) {
-      if (note.number <= DISABLED_NOTE) {
-        note = newNote;
-        sort();
+    for (int i = 0; i < maxNumNotes; ++i) {
+      if (notes[i].number <= DISABLED_NOTE) {
+        notes[i] = newNote;
+        sortByNote();
         return;
       }
     }
 
-    // LRU replacement
+    // for (auto& note : notes) {
+    //   if (note.number <= DISABLED_NOTE) {
+    //     note = newNote;
+    //     sort();
+    //     return;
+    //   }
+    // }
+
+    // latest note replacement
+    int latest_index = 0;
+    float max_offset = notes[0].offset;
+    for (int i = 1; i < maxNumNotes; ++i) {
+      if (notes[i].offset > max_offset) {
+        max_offset = notes[i].offset;
+        latest_index = i;
+      }
+    }
+
+    // if notes are already sorted, fallback to highest note replacement
+
+    // closest note replacement
     // int closest_index = 0;
     // int closest_distance = 127;
     // for (int i = 0; i < POLYPHONY; ++i) {
@@ -95,17 +114,8 @@ struct PolyStep {
     //   }
     // }
 
-    int lru_index = 0;
-    float min_offset = notes[0].offset;
-    for (int i = 1; i < POLYPHONY; ++i) {
-      if (notes[i].offset < min_offset) {
-        min_offset = notes[i].offset;
-        lru_index = i;
-      }
-    }
-
-    notes[lru_index] = newNote;
-    sort();
+    notes[latest_index] = newNote;
+    sortByNote();
     return;
   }
 
@@ -142,21 +152,24 @@ public:
   using StepType = PolyStep<POLYPHONY>;
 
   PolyTrack(int channel,
-            const NoteLimiter& noteLimiter,
+            const VoiceLimiter& noteLimiter,
             int length = STEP_SEQ_DEFAULT_LENGTH,
             Resolution resolution = _16th)
       : Part(channel, length, resolution),
         noteLimiterRef(noteLimiter),
         interval_(0),
-        overdub_(false) {}
+        overdub_(false),
+        rest_(false) {}
 
   StepType getStepAtIndex(int index) const { return steps_[index]; }
 
   void setStepAtIndex(int index, StepType step) { steps_[index] = step; }
 
+  void resetStepAtIndex(int index) { steps_[index].reset(); }
+
   // returns default note if there is not data in the track
   int getRootNoteNumber() const {
-    // idea: some kind of fancy key detection algorithm?
+    // idea: some kind of key detection algorithm
     int root = DEFAULT_NOTE;
     for (int i = 0; i < getLength(); ++i) {
       const auto& step = steps_[i];
@@ -172,16 +185,16 @@ public:
 
   void setOverdub(bool enabled) { overdub_ = enabled; }
 
+  void setRest(bool enabled) { rest_ = enabled; }
+
 private:
   StepType steps_[STEP_SEQ_MAX_LENGTH];
 
-  // const KeyboardState& keyboardRef;
-
-  const NoteLimiter& noteLimiterRef;
+  const VoiceLimiter& noteLimiterRef;
 
   int interval_;
-
   bool overdub_;
+  bool rest_;
 
   int getStepRenderTick(int index) const override final {
     float offset_min = 0.0f;
@@ -194,19 +207,29 @@ private:
   void renderStep(int index) override final {
     auto& step = steps_[index];
     if (step.enabled) {
-      // overdub (mute active notes from note limiter)
+      // overdub (modify step data based on actual voice usage)
       if (overdub_) {
-        for (int i = 0; i < POLYPHONY; ++i) {
-          // order matters: sort by offset and then by note number
-          if (!noteLimiterRef.tryNoteOn(step.notes[i].number,
-                                        Priority::Sequencer)) {
-            step.notes[i].number = DISABLED_NOTE;
+        if (rest_) {
+          step.reset();
+          return;
+        }
+
+        // warning: the order of evaluating tryNoteOn matters
+        step.sortByOffset();
+
+        for (auto& note : step.notes) {
+          if (note.number > DISABLED_NOTE) {
+            if (!noteLimiterRef.tryNoteOn(note.number, Priority::Sequencer)) {
+              note.number = DISABLED_NOTE;
+            }
           }
         }
 
         if (step.isEmpty()) {
           step.reset();
           return;
+        } else {
+          step.sortByOffset();
         }
       }
 
@@ -215,10 +238,15 @@ private:
       //   return;
       // }
 
+      // mute if rest is pressed
+      if (rest_) {
+        return;
+      }
+
       // render all notes in the step
-      for (int j = 0; j < POLYPHONY; ++j) {
+      for (const auto& note : steps_[index].notes) {
         // render note
-        renderNote(index, steps_[index].notes[j].transposed(interval_));
+        renderNote(index, note.transposed(interval_));
       }
     }
   }

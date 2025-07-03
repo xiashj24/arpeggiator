@@ -21,20 +21,23 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(
   playButton.addShortcut(juce::KeyPress(juce::KeyPress::spaceKey));
   playButton.setTooltip("toggle play and pause (space)");
   playButton.onClick = [this] {
-    processorRef.arpseq.toggleSequencerPlayback();
+    processorRef.arpseq.setSequencerPlay(playButton.getToggleState());
   };
   addAndMakeVisible(playButton);
 
-  stopButton.setButtonText(juce::String::fromUTF8("⏹Stop"));
-  stopButton.addShortcut(juce::KeyPress('s'));
-  stopButton.setTooltip("stop playback and move to start position (s)");
-  stopButton.onClick = [this] {
-    processorRef.arpseq.startSequencer(true);
-    processorRef.arpseq.stopSequencer();
-    playButton.setToggleState(false,
-                              juce::NotificationType::dontSendNotification);
+  restButton.setButtonText("Rest");  // juce::String::fromUTF8("⏹Stop")
+  restButton.setClickingTogglesState(true);
+  restButton.setColour(juce::TextButton::ColourIds::buttonOnColourId,
+                       juce::Colours::orangered);
+  // restButton.setTooltip("stop playback and move to start position (s)");
+  restButton.onClick = [this] {
+    processorRef.arpseq.setSequencerRest(restButton.getToggleState());
+    // processorRef.arpseq.startSequencer(true);
+    // processorRef.arpseq.stopSequencer();
+    // playButton.setToggleState(false,
+    //                           juce::NotificationType::dontSendNotification);
   };
-  addAndMakeVisible(stopButton);
+  addAndMakeVisible(restButton);
 
   recordButton.setButtonText(juce::String::fromUTF8("⏺Rec"));
   recordButton.setClickingTogglesState(true);
@@ -226,7 +229,7 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(
   polyphonySlider.setRange(1, 10, 1);
   polyphonySlider.setValue(10);
   polyphonySlider.onValueChange = [this] {
-    processorRef.arpseq.getNoteLimiter().setNumVoices(
+    processorRef.arpseq.getVoiceLimiter().setNumVoices(
         static_cast<size_t>(polyphonySlider.getValue()));
   };
   addAndMakeVisible(polyphonySlider);
@@ -255,7 +258,7 @@ void AudioPluginAudioProcessorEditor::resized() {
 
   playButton.setBounds(utility_bar.removeFromLeft(BUTTON_WIDTH));
   utility_bar.removeFromLeft(10);
-  stopButton.setBounds(utility_bar.removeFromLeft(BUTTON_WIDTH));
+  restButton.setBounds(utility_bar.removeFromLeft(BUTTON_WIDTH));
   utility_bar.removeFromLeft(10);
   recordButton.setBounds(utility_bar.removeFromLeft(BUTTON_WIDTH));
   utility_bar.removeFromLeft(10);
