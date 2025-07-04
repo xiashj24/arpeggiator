@@ -65,8 +65,8 @@ struct PolyStep {
       return;
     };
 
-    // note: be consistent with note stealing policy in VoiceLimiter
-    // same note replacement -> search free slot -> LRU replacement
+    // note: be consistent with voice stealing policy in VoiceLimiter
+    // same note replacement -> free slot -> closest/latest note replacement
     for (auto& note : notes) {
       if (note.number == newNote.number) {
         note = newNote;
@@ -83,38 +83,31 @@ struct PolyStep {
       }
     }
 
-    // for (auto& note : notes) {
-    //   if (note.number <= DISABLED_NOTE) {
-    //     note = newNote;
-    //     sort();
-    //     return;
+    // replace latest note
+    // int latest_index = 0;
+    // float max_offset = notes[0].offset;
+    // for (int i = 1; i < maxNumNotes; ++i) {
+    //   if (notes[i].offset > max_offset) {
+    //     max_offset = notes[i].offset;
+    //     latest_index = i;
     //   }
     // }
+    // notes[latest_index] = newNote;
+    // sortByNote();
+    // return;
 
-    // latest note replacement
-    int latest_index = 0;
-    float max_offset = notes[0].offset;
-    for (int i = 1; i < maxNumNotes; ++i) {
-      if (notes[i].offset > max_offset) {
-        max_offset = notes[i].offset;
-        latest_index = i;
+    // replace closest note
+    int closest_index = 0;
+    int closest_distance = 128;
+
+    for (int i = 0; i < maxNumNotes; ++i) {
+      int distance = std::abs(notes[i].number - newNote.number);
+      if (distance < closest_distance) {
+        closest_distance = distance;
+        closest_index = i;
       }
     }
-
-    // if notes are already sorted, fallback to highest note replacement
-
-    // closest note replacement
-    // int closest_index = 0;
-    // int closest_distance = 127;
-    // for (int i = 0; i < POLYPHONY; ++i) {
-    //   int distance = std::abs(notes[i].number - newNote.number);
-    //   if (distance <= closest_distance) {
-    //     closest_distance = distance;
-    //     closest_index = i;
-    //   }
-    // }
-
-    notes[latest_index] = newNote;
+    notes[closest_index] = newNote;
     sortByNote();
     return;
   }
@@ -156,7 +149,7 @@ public:
             int length = STEP_SEQ_DEFAULT_LENGTH,
             Resolution resolution = _16th)
       : Part(channel, length, resolution),
-        noteLimiterRef(noteLimiter),
+        voiceLimiterRef(noteLimiter),
         interval_(0),
         overdub_(false),
         rest_(false) {}
@@ -190,7 +183,7 @@ public:
 private:
   StepType steps_[STEP_SEQ_MAX_LENGTH];
 
-  const VoiceLimiter& noteLimiterRef;
+  const VoiceLimiter& voiceLimiterRef;
 
   int interval_;
   bool overdub_;
@@ -219,7 +212,7 @@ private:
 
         for (auto& note : step.notes) {
           if (note.number > DISABLED_NOTE) {
-            if (!noteLimiterRef.tryNoteOn(note.number, Priority::Sequencer)) {
+            if (!voiceLimiterRef.tryNoteOn(note.number, Priority::Sequencer, VoiceLimiter::StealingPolicy::Closest)) {
               note.number = DISABLED_NOTE;
             }
           }

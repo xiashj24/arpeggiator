@@ -17,11 +17,9 @@
 
 namespace Sequencer {
 
-// this classes is responsible for time translation and sending midi messages to
-// upper level
+// this classes is responsible for time translation and sending midi messages
 
 // TODO: make sure all private variables properly initialized
-
 static double GetSystemTime() {
   return juce::Time::getMillisecondCounterHiRes() * 0.001;
 }
@@ -46,49 +44,22 @@ public:
         sequencer_(1, voiceLimiter_, 16),
         voiceLimiter_(10),
         midiCollector_(midiCollector) {
-    arpeggiator_.sendMidiMessage = [this](juce::MidiMessage msg) {
+    arpeggiator_.sendMidiMessage = [this](juce::MidiMessage message) {
       // time translation
-      // int tick = static_cast<int>(msg.getTimeStamp());
+      // int tick = static_cast<int>(message.getTimeStamp());
       // double real_time_stamp = arpStartTime_ + getOneTickTime() * tick;
       double real_time_stamp = GetSystemTime();
-      sendMidiMessageToOuput(msg.withTimeStamp(real_time_stamp));
+      sendMidiMessageToOuput(message.withTimeStamp(real_time_stamp));
     };
     // MARK: seq out
-    sequencer_.sendMidiMessage = [this](juce::MidiMessage msg) {
+    sequencer_.sendMidiMessage = [this](juce::MidiMessage message) {
       // time translation (TODO: just use system time?)
-      // int tick = static_cast<int>(msg.getTimeStamp());
+      // int tick = static_cast<int>(message.getTimeStamp());
       // double real_time_stamp = seqStartTime_ + getOneTickTime() * tick;
       double real_time_stamp = GetSystemTime();
-      msg.setTimeStamp(real_time_stamp);
+      message.setTimeStamp(real_time_stamp);
 
-      if (msg.isNoteOn()) {
-        auto& note_on = msg;
-        int stolen_note = DUMMY_NOTE;
-        if (voiceLimiter_.noteOn(note_on.getNoteNumber(), Priority::Sequencer,
-                                 &stolen_note)) {
-          if (stolen_note != DUMMY_NOTE) {
-            auto note_off = juce::MidiMessage::noteOff(1, stolen_note);
-            note_off.setTimeStamp(note_on.getTimeStamp());
-            sendMidiMessageToArp(note_off);
-            // DBG("note off stolen note: " << stolen_note);
-          }
-          sendMidiMessageToArp(note_on);
-          // DBG("pass thru sequencer note on: " << note_on.getNoteNumber());
-        } else {
-          DBG("sequencer note on not triggered: " << note_on.getNoteNumber());
-        }
-      } else if (msg.isNoteOff()) {
-        auto& note_off = msg;
-        if (voiceLimiter_.noteOff(note_off.getNoteNumber(),
-                                  Priority::Sequencer)) {
-          sendMidiMessageToArp(note_off);
-        } else {
-          DBG("sequencer note off not triggered (stolen): "
-              << note_off.getNoteNumber());
-        }
-      }
-
-      DBG("Number Of active notes: " << voiceLimiter_.getNumActiveVoices());
+      sendMidiMessageToVoiceLimiter(message, Priority::Sequencer);
     };
 
     // MARK: arp seq sync
@@ -107,7 +78,6 @@ public:
 
   enum class KeytriggerMode { LastKey, Transpose, FirstKey };
   void setKeytriggerMode(KeytriggerMode mode) { keytriggerMode_ = mode; }
-  // KeytriggerMode getKeyTriggerMode() const { return keytriggerMode_; }
 
   void setBpm(double BPM) { bpm_ = BPM; }
   double getBpm() const { return bpm_; }
@@ -200,29 +170,8 @@ public:
       }
     }
 
-    // if (arpOn_) {
-    //   note_muted = true;
-    // }
-
     if (!note_muted) {
-      // check max note limit
-      int stolen_note = DUMMY_NOTE;
-
-      if (voiceLimiter_.noteOn(noteOn.getNoteNumber(), Priority::Keyboard,
-                               &stolen_note)) {
-        if (stolen_note != DUMMY_NOTE) {
-          auto note_off = juce::MidiMessage::noteOff(1, stolen_note);
-          note_off.setTimeStamp(noteOn.getTimeStamp());
-          sendMidiMessageToArp(note_off);
-          DBG("note off stolen note: " << stolen_note);
-        }
-        sendMidiMessageToArp(noteOn);
-        DBG("pass thru keyboard note on: " << noteOn.getNoteNumber());
-      } else {
-        DBG("no available voices: " << noteOn.getNoteNumber());
-      }
-
-      DBG("Number Of active notes: " << voiceLimiter_.getNumActiveVoices());
+      sendMidiMessageToVoiceLimiter(noteOn, Priority::Keyboard);
     }
   }
 
@@ -232,6 +181,10 @@ public:
   // automatically stopped when all notes are off
   void handleNoteOff(juce::MidiMessage noteOff, bool recordingOn = true) {
     if (hold_) {
+      return;
+    }
+
+    if (!keyboard_.isKeyDown(noteOff.getNoteNumber())) {
       return;
     }
 
@@ -279,20 +232,8 @@ public:
       notifyProcessorSeqUpdate(step_index, step);
     }
 
-    // if (arpOn_) {
-    //   note_muted = true;
-    // }
-
     if (!note_muted) {
-      if (voiceLimiter_.noteOff(noteOff.getNoteNumber(), Priority::Keyboard)) {
-        sendMidiMessageToArp(noteOff);
-        DBG("pass thru keyboard note off: " << noteOff.getNoteNumber());
-
-      } else {
-        DBG("note was not triggered or stolen: " << noteOff.getNoteNumber());
-      }
-
-      DBG("Number Of active notes: " << voiceLimiter_.getNumActiveVoices());
+      sendMidiMessageToVoiceLimiter(noteOff, Priority::Keyboard);
     }
   }
 
@@ -311,7 +252,7 @@ public:
   }
 
   void setHold(bool enabled) {
-    hold_ = enabled;  // caveat: do not place this before allNotesOff
+    hold_ = enabled;  // caveat: do not place this after allNotesOff
 
     if (!hold_) {
       allNotesOff();
@@ -463,14 +404,46 @@ private:
 
   void stopArpeggiator() { arpeggiator_.stop(true); }
 
+  void sendMidiMessageToVoiceLimiter(
+      juce::MidiMessage message,
+      Priority prority,
+      VoiceLimiter::StealingPolicy policy = VoiceLimiter::StealingPolicy::Closest) {
+    if (message.isNoteOn()) {
+      auto& note_on = message;
+      int stolen_note = DUMMY_NOTE;
+      if (voiceLimiter_.noteOn(note_on.getNoteNumber(), prority, policy,
+                               &stolen_note)) {
+        if (stolen_note != DUMMY_NOTE) {
+          auto note_off = juce::MidiMessage::noteOff(1, stolen_note);
+          note_off.setTimeStamp(note_on.getTimeStamp());
+          sendMidiMessageToArp(note_off);
+          // DBG("note off stolen note: " << stolen_note);
+        }
+        sendMidiMessageToArp(note_on);
+        // DBG("pass thru sequencer note on: " << note_on.getNoteNumber());
+      } else {
+        DBG("note on not triggered: " << note_on.getNoteNumber());
+      }
+    } else if (message.isNoteOff()) {
+      auto& note_off = message;
+      if (voiceLimiter_.noteOff(note_off.getNoteNumber(), prority)) {
+        sendMidiMessageToArp(note_off);
+      } else {
+        DBG("sequencer note off not triggered (stolen): "
+            << note_off.getNoteNumber());
+      }
+    }
+
+    DBG("Number Of active notes: " << voiceLimiter_.getNumActiveVoices());
+  }
+
   // MARK: arp logic
   void sendMidiMessageToArp(juce::MidiMessage message) {
     if (message.isNoteOn()) {
       arpeggiator_.handleNoteOn(message);
 
-      // start arp instantly if seq not running
-
-      if (arpOn_) {  //  && !sequencerIsTicking_
+      // start arp instantly
+      if (arpOn_) {  //  && !sequencerIsTicking_ //  if seq not running
         startArpeggiator();
       }
 

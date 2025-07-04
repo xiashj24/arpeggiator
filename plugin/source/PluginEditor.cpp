@@ -25,10 +25,11 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(
   };
   addAndMakeVisible(playButton);
 
-  restButton.setButtonText("Rest");  // juce::String::fromUTF8("⏹Stop")
+  restButton.setButtonText("resT");  // juce::String::fromUTF8("⏹Stop")
   restButton.setClickingTogglesState(true);
   restButton.setColour(juce::TextButton::ColourIds::buttonOnColourId,
                        juce::Colours::orangered);
+  restButton.addShortcut(juce::KeyPress('t'));
   // restButton.setTooltip("stop playback and move to start position (s)");
   restButton.onClick = [this] {
     processorRef.arpseq.setSequencerRest(restButton.getToggleState());
@@ -87,7 +88,7 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(
 
   keytriggerModeSelector.addItem("Retrigger (Mono)", 1);
   keytriggerModeSelector.addItem("Transpose (Mono Legato)", 2);
-  keytriggerModeSelector.addItem("First (Poly)", 3);
+  keytriggerModeSelector.addItem("First Key (Poly)", 3);
   keytriggerModeSelector.onChange = [this] {
     processorRef.arpseq.setKeytriggerMode(
         static_cast<Sequencer::ArpSeq::KeytriggerMode>(
@@ -237,6 +238,7 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(
   addAndMakeVisible(sequencerViewport);
   sequencerViewport.setViewedComponent(&sequencerComponent, false);
 
+  onScreenKeyboard.setWantsKeyboardFocus(false);  // disable keypress
   addAndMakeVisible(onScreenKeyboard);
 }
 

@@ -17,6 +17,8 @@ enum class Priority { Keyboard = 1, Sequencer = 0 };
 
 class VoiceLimiter {
 public:
+  enum class StealingPolicy { LRU, Closest };
+
   VoiceLimiter(size_t numVoices) : numVoices_{numVoices} {}
 
   // Caveat: when setNumVoices reduces polyphony (e.g. 10 -> 5)
@@ -27,9 +29,11 @@ public:
   void setNumVoices(size_t numVoices) { numVoices_ = numVoices; }
   size_t getNumVoices() const { return numVoices_; }
 
-  bool tryNoteOn(int noteNumber, Priority priority) const {
+  bool tryNoteOn(int noteNumber,
+                 Priority priority,
+                 StealingPolicy policy) const {
     // unsafe but avoids code duplication...
-    return const_cast<VoiceLimiter*>(this)->noteOn(noteNumber, priority,
+    return const_cast<VoiceLimiter*>(this)->noteOn(noteNumber, priority, policy,
                                                    nullptr, false);
   }
 
@@ -37,9 +41,9 @@ public:
   // stolenNote is not written if no note stealing happens
   bool noteOn(int noteNumber,
               Priority priority,
+              StealingPolicy policy,
               int* stolenNote = nullptr,
               bool modify = true) {
-
     // retrigger same note from same or higher priority
     auto result = std::find_if(
         lru_.begin(), lru_.end(),
@@ -68,22 +72,49 @@ public:
       return true;
     }
 
-    // steal LRU note of lower or same priority
-    result = std::find_if(
-        lru_.begin(), lru_.end(),
-        [priority](const auto& voice) { return voice.priority <= priority; });
+    // steal LRU note with priority <= incoming
+    if (policy == StealingPolicy::LRU) {
+      result = std::find_if(
+          lru_.begin(), lru_.end(),
+          [priority](const auto& voice) { return voice.priority <= priority; });
 
-    if (result != lru_.end()) {
-      // replace
-      if (modify) {
-        if (stolenNote) {
-          *stolenNote = result->note;
+      if (result != lru_.end()) {
+        // replace
+        if (modify) {
+          if (stolenNote) {
+            *stolenNote = result->note;
+          }
+          lru_.erase(result);
+          lru_.push_back({noteNumber, priority});
         }
-        lru_.erase(result);
-        lru_.push_back({noteNumber, priority});
+
+        return true;
+      }
+    } else if (policy == StealingPolicy::Closest) {
+      // find the closest note with priority <= incoming
+      result = lru_.end();
+      int min_distance = 128;
+
+      for (auto it = lru_.begin(); it != lru_.end(); ++it) {
+        if (it->priority <= priority) {
+          int distance = std::abs(it->note - noteNumber);
+          if (distance < min_distance) {
+            min_distance = distance;
+            result = it;
+          }
+        }
       }
 
-      return true;
+      if (result != lru_.end()) {
+        if (modify) {
+          if (stolenNote) {
+            *stolenNote = result->note;
+          }
+          lru_.erase(result);
+          lru_.push_back({noteNumber, priority});
+        }
+        return true;
+      }
     }
 
     return false;
