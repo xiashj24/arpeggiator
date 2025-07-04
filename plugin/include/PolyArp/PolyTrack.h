@@ -229,7 +229,7 @@ private:
           step.reset();
           return;
         } else {
-          step.sortByOffset();
+          step.sortByNote();
         }
       }
 
@@ -244,10 +244,15 @@ private:
       }
 
       // render all notes in the step
+      // order by offset for arp to play correctly
+      step.sortByOffset();
+
       for (const auto& note : steps_[index].notes) {
         // render note
         renderNote(index, note.transposed(interval_));
       }
+
+      step.sortByNote();
     }
   }
 };
