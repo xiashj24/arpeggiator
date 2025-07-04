@@ -80,7 +80,7 @@ public:
           *stolenNote = result->note;
         }
         lru_.erase(result);
-        lru_.emplace_back(noteNumber, priority);
+        lru_.push_back({noteNumber, priority});
       }
 
       return true;
