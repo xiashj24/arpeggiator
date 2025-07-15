@@ -23,10 +23,12 @@ AudioPluginAudioProcessor::AudioPluginAudioProcessor()
   arpOctaveParam = parameters.getRawParameterValue("ARP_OCTAVE");
   arpGateParam = parameters.getRawParameterValue("ARP_GATE");
   arpResolutionParam = parameters.getRawParameterValue("ARP_RESOLUTION");
+  arpTransposeParam = parameters.getRawParameterValue("ARP_TRANSPOSE");
   euclidPatternParam = parameters.getRawParameterValue("EUCLID_PATTERN");
   euclidLegatoParam = parameters.getRawParameterValue("EUCLID_LEGATO");
 
   // seq parameters
+  seqLengthParam = parameters.getRawParameterValue("SEQ_LENGTH");
   for (int step = 0; step < STEP_SEQ_MAX_LENGTH; ++step) {
     juce::String prefix = "S" + juce::String(step) + "_";
     seqStepEnabledParam[step] =
@@ -109,7 +111,7 @@ AudioPluginAudioProcessor::createParameterLayout() {
   StringArray arpTypeChoices{
       "Manual",    "Rise",         "Fall",    "Rise Fall", "Rise N' Fall",
       "Fall Rise", "Fall N' Rise", "Shuffle", "Walk",      "Random 1",
-      "Random 2",  "Random 3"};  // note: chord mode deleted
+      "Random 2",  "Random 3",     "Chord",   "Gacha"};
   layout.add(std::make_unique<AudioParameterChoice>("ARP_TYPE", "Arp Type",
                                                     arpTypeChoices, 0));
 
@@ -127,7 +129,11 @@ AudioPluginAudioProcessor::createParameterLayout() {
                                 "1/2T", "1/4T", "1/8T", "1/16T"};
 
   layout.add(std::make_unique<AudioParameterChoice>(
-      "ARP_RESOLUTION", "Resolution", resolutionChoices, 2));
+      "ARP_RESOLUTION", "Resolution", resolutionChoices, 1));
+
+  // Transpose
+  layout.add(std::make_unique<juce::AudioParameterInt>(
+      "ARP_TRANSPOSE", "Transpose", -12, 12, 0));
 
   // Euclidean Patterns
   StringArray euclidPatternChoices{
@@ -146,8 +152,9 @@ AudioPluginAudioProcessor::createParameterLayout() {
   layout.add(std::make_unique<AudioParameterBool>("EUCLID_LEGATO",
                                                   "Euclid Legato", false));
 
-  // layout.add(
-  //     std::make_unique<AudioParameterBool>("ARP_BYPASS", "Bypass", false));
+  layout.add(std::make_unique<AudioParameterInt>(
+      "SEQ_LENGTH", "Sequencer Length", STEP_SEQ_MIN_LENGTH,
+      STEP_SEQ_MAX_LENGTH, STEP_SEQ_DEFAULT_LENGTH));
 
   for (int step = 0; step < STEP_SEQ_MAX_LENGTH; ++step) {
     String prefix = "S" + String(step) + "_";
@@ -297,16 +304,20 @@ void AudioPluginAudioProcessor::hiResTimerCallback() {
   // MARK: arpseq logic
   constexpr double deltaTime = HIRES_TIMER_INTERVAL_MS / 1000.0;
 
-  // apply parameters
+  // apply parameter
+  int length = static_cast<int>(seqLengthParam->load());
+  arpseq.getSeq().setLength(length);
+  arpseq.getArp().setPatternLength(length);
   for (int i = 0; i < STEP_SEQ_MAX_LENGTH; ++i) {
     auto step = arpseq.getSeq().getStepAtIndex(i);
-    step.enabled = static_cast<bool>(*(seqStepEnabledParam[i]));
+    step.enabled = static_cast<bool>(seqStepEnabledParam[i]->load());
 
     for (int j = 0; j < POLYPHONY; ++j) {
-      step.notes[j].number = static_cast<int>(*(seqStepNoteParam[i][j]));
-      step.notes[j].velocity = static_cast<int>(*(seqStepVelocityParam[i][j]));
-      step.notes[j].offset = *(seqStepOffsetParam[i][j]);
-      step.notes[j].length = *(seqStepLengthParam[i][j]);
+      step.notes[j].number = static_cast<int>(seqStepNoteParam[i][j]->load());
+      step.notes[j].velocity =
+          static_cast<int>(seqStepVelocityParam[i][j]->load());
+      step.notes[j].offset = seqStepOffsetParam[i][j]->load();
+      step.notes[j].length = seqStepLengthParam[i][j]->load();
     }
     arpseq.getSeq().setStepAtIndex(i, step);
   }
@@ -317,6 +328,8 @@ void AudioPluginAudioProcessor::hiResTimerCallback() {
   float gate = arpGateParam->load();
   auto resolution =
       static_cast<Sequencer::Part::Resolution>(arpResolutionParam->load());
+
+  int transpose = static_cast<int>(arpTransposeParam->load());
   bool euclid_legato = static_cast<bool>(euclidLegatoParam->load());
   auto euclid_pattern = static_cast<Sequencer::Arpeggiator::EuclidPattern>(
       euclidPatternParam->load());
@@ -324,9 +337,9 @@ void AudioPluginAudioProcessor::hiResTimerCallback() {
   arpseq.getArp().setOctave(octave);
   arpseq.getArp().setGate(gate);
   arpseq.getArp().setResolution(resolution);
+  arpseq.getArp().setTransposeInterval(transpose);
   arpseq.getArp().setEuclidLegato(euclid_legato);
   arpseq.getArp().setEuclidPattern(euclid_pattern);
-
   arpseq.process(deltaTime);
 }
 
@@ -379,27 +392,26 @@ void AudioPluginAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer,
 
   // generate MIDI start/stop/continue messages by querying DAW transport
   // also set bpm
-  // if (this->wrapperType ==
-  //     juce::AudioProcessor::WrapperType::wrapperType_VST3) {
-  //   if (auto dawPlayHead = getPlayHead()) {
-  //     if (auto positionInfo = dawPlayHead->getPosition()) {
-  //       arpseq.setBpm(positionInfo->getBpm().orFallback(120.0));
-  //       arpseq.setSyncToHost(positionInfo->getIsPlaying());
+  if (this->wrapperType ==
+      juce::AudioProcessor::WrapperType::wrapperType_VST3) {
+    if (auto dawPlayHead = getPlayHead()) {
+      if (auto positionInfo = dawPlayHead->getPosition()) {
+        arpseq.setBpm(positionInfo->getBpm().orFallback(120.0));
 
-  //       double quarter_note = positionInfo->getPpqPosition().orFallback(0.0);
-  //       int ppq = static_cast<int>(quarter_note * E3_PPQ);
+        // double quarter_note = positionInfo->getPpqPosition().orFallback(0.0);
+        // int ppq = static_cast<int>(quarter_note * E3_PPQ);
 
-  //       if ((ppq % TICKS_PER_16TH) == 0) {
-  //         // start synced to daw (this looks very messy lol)
-  //         if (arpseq.getSyncToHost()) {
-  //           if (!arpseq.isRunning() && arpseq.shouldBeRunning()) {
-  //             arpseq.start(lastCallbackTime);
-  //           }
-  //         }
-  //       }
-  //     }
-  //   }
-  // }
+        // if ((ppq % TICKS_PER_16TH) == 0) {
+        //   // start synced to daw (this looks very messy lol)
+        //   if (arpseq.getSyncToHost()) {
+        //     if (!arpseq.isRunning() && arpseq.shouldBeRunning()) {
+        //       arpseq.start(lastCallbackTime);
+        //     }
+        //   }
+        // }
+      }
+    }
+  }
 
   // discard input MIDI messages
   midiMessages.clear();

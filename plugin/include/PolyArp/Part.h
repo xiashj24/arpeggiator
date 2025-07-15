@@ -17,6 +17,7 @@
 
 // TODO: make this a static constexpr variable of TRACK(Part)
 #define STEP_SEQ_MAX_LENGTH 64
+#define STEP_SEQ_MIN_LENGTH 4
 #define STEP_SEQ_DEFAULT_LENGTH 16
 
 namespace Sequencer {
@@ -100,7 +101,7 @@ public:
     return RESOLUTION_TICKS_TABLE[static_cast<int>(resolution_)];
   }
 
-  void moveToGrid() { tick_ = getCurrentStepIndex() * getTicksPerStep(); }
+  // void moveToGrid() { tick_ = getCurrentStepIndex() * getTicksPerStep(); }
 
   void sendNoteOffNow();
 

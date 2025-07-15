@@ -27,20 +27,25 @@ private:
   juce::Label octaveLabel;
   juce::Label gateLabel;
   juce::Label resolutionLabel;
+  juce::Label transposeLabel;
   juce::Label euclidPatternLabel;
   juce::Label euclidLegatoLabel;
+  juce::Label arpVelocityLabel;
 
   juce::Slider typeKnob;
   juce::Slider octaveKnob;
   juce::Slider gateKnob;
   juce::Slider resolutionKnob;
-
+  juce::Slider transposeKnob;
   juce::Slider euclidPatternKnob;
   juce::ToggleButton euclidLagatoButton;
 
   // seq
   juce::Viewport sequencerViewport;
   PolyTrackComponent sequencerComponent;
+
+  juce::Label seqLengthLabel;
+  juce::Slider seqLengthKnob;
 
   // utility bar
   juce::TextButton playButton;
@@ -49,6 +54,7 @@ private:
   juce::TextButton quantizeButton;
   juce::TextButton keytriggerButton;
   juce::ComboBox keytriggerModeSelector;
+  juce::ComboBox arpVelocityModeSelector;
 
   juce::TextButton arpButton;
   juce::TextButton holdButton;
@@ -66,7 +72,8 @@ private:
   using ButtonAttachment = juce::AudioProcessorValueTreeState::ButtonAttachment;
 
   std::unique_ptr<SliderAttachment> typeAttachment, octaveAttachment,
-      gateAttachment, resolutionAttachment, euclidPatternAttachment;
+      gateAttachment, transposeAttachment, resolutionAttachment,
+      euclidPatternAttachment, seqLengthAttachment;
 
   std::unique_ptr<ButtonAttachment> bypassAttachment, euclidLegatoAttachment;
 

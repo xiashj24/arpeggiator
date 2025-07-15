@@ -80,15 +80,14 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(
     processorRef.arpseq.setKeyTrigger(should_keytrigger);
     if (should_keytrigger) {
       recordButton.setToggleState(false, juce::sendNotification);
-      playButton.setToggleState(false, juce::sendNotification);
+      // playButton.setToggleState(false, juce::sendNotification);
     }
   };
 
   addAndMakeVisible(keytriggerButton);
 
-  keytriggerModeSelector.addItem("Retrigger (Mono)", 1);
-  keytriggerModeSelector.addItem("Transpose (Mono Legato)", 2);
-  keytriggerModeSelector.addItem("First Key (Poly)", 3);
+  keytriggerModeSelector.addItemList(
+      {"Retrigger (Mono)", "Transpose (Mono Legato)", "First Key (Poly)"}, 1);
   keytriggerModeSelector.onChange = [this] {
     processorRef.arpseq.setKeytriggerMode(
         static_cast<Sequencer::ArpSeq::KeytriggerMode>(
@@ -96,6 +95,20 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(
   };
   addAndMakeVisible(keytriggerModeSelector);
   keytriggerModeSelector.setSelectedId(
+      1, juce::NotificationType::sendNotification);
+
+  arpVelocityLabel.setText("Velocity", juce::dontSendNotification);
+  arpVelocityLabel.setJustificationType(juce::Justification::bottomLeft);
+  arpVelocityLabel.attachToComponent(&arpVelocityModeSelector, false);
+  arpVelocityModeSelector.addItemList(
+      {"As Played", "Average", "Last Note", "Fixed"}, 1);
+  arpVelocityModeSelector.onChange = [this] {
+    processorRef.arpseq.getArp().setVelocityMode(
+        static_cast<Sequencer::Arpeggiator::VelocityMode>(
+            arpVelocityModeSelector.getSelectedId() - 1));
+  };
+  addAndMakeVisible(arpVelocityModeSelector);
+  arpVelocityModeSelector.setSelectedId(
       1, juce::NotificationType::sendNotification);
 
   holdButton.setButtonText("Hold");
@@ -167,7 +180,32 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(
   resolutionAttachment = std::make_unique<SliderAttachment>(
       processorRef.parameters, "ARP_RESOLUTION", resolutionKnob);
 
-  // Gate Pattern
+  transposeLabel.setText("Transpose",
+                         juce::NotificationType::dontSendNotification);
+  transposeLabel.setJustificationType(juce::Justification::centredBottom);
+  transposeLabel.attachToComponent(&transposeKnob, false);
+
+  transposeKnob.setSliderStyle(juce::Slider::SliderStyle::RotaryVerticalDrag);
+  transposeKnob.setTextBoxStyle(juce::Slider::TextBoxBelow, false, KNOB_WIDTH,
+                                KNOB_TEXT_HEIGHT);
+  addAndMakeVisible(transposeKnob);
+  transposeAttachment = std::make_unique<SliderAttachment>(
+      processorRef.parameters, "ARP_TRANSPOSE", transposeKnob);
+
+  // sequence length
+  seqLengthLabel.setText("Seq Length",
+                         juce::NotificationType::dontSendNotification);
+  seqLengthLabel.setJustificationType(juce::Justification::centredBottom);
+  seqLengthLabel.attachToComponent(&seqLengthKnob, false);
+
+  seqLengthKnob.setSliderStyle(juce::Slider::SliderStyle::RotaryVerticalDrag);
+  seqLengthKnob.setTextBoxStyle(juce::Slider::TextBoxBelow, false, KNOB_WIDTH,
+                                KNOB_TEXT_HEIGHT);
+  addAndMakeVisible(seqLengthKnob);
+  seqLengthAttachment = std::make_unique<SliderAttachment>(
+      processorRef.parameters, "SEQ_LENGTH", seqLengthKnob);
+
+  // Euclid Pattern
   euclidPatternLabel.setText("Density",
                              juce::NotificationType::dontSendNotification);
   euclidPatternLabel.setJustificationType(juce::Justification::centredBottom);
@@ -176,7 +214,6 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(
   euclidPatternKnob.setTextBoxStyle(juce::Slider::TextBoxBelow, false,
                                     KNOB_WIDTH, KNOB_TEXT_HEIGHT);
   addAndMakeVisible(euclidPatternKnob);
-
   euclidPatternAttachment = std::make_unique<SliderAttachment>(
       processorRef.parameters, "EUCLID_PATTERN", euclidPatternKnob);
 
@@ -290,9 +327,15 @@ void AudioPluginAudioProcessorEditor::resized() {
   knob_bar.removeFromLeft(KNOB_SPACING);
   resolutionKnob.setBounds(knob_bar.removeFromLeft(KNOB_WIDTH));
   knob_bar.removeFromLeft(KNOB_SPACING);
+  transposeKnob.setBounds(knob_bar.removeFromLeft(KNOB_WIDTH));
+  knob_bar.removeFromLeft(KNOB_SPACING);
   euclidPatternKnob.setBounds(knob_bar.removeFromLeft(KNOB_WIDTH));
   knob_bar.removeFromLeft(KNOB_SPACING);
   euclidLagatoButton.setBounds(knob_bar.removeFromLeft(KNOB_WIDTH));
+  knob_bar.removeFromLeft(KNOB_SPACING);
+  arpVelocityModeSelector.setBounds(
+      knob_bar.removeFromLeft(120).removeFromTop(BUTTON_HEIGHT));
+  seqLengthKnob.setBounds(knob_bar.removeFromRight(KNOB_WIDTH));
 
   sequencerViewport.setBounds(bounds.reduced(30));
 }

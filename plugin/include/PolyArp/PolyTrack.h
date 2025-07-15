@@ -212,7 +212,9 @@ private:
 
         for (auto& note : step.notes) {
           if (note.number > DISABLED_NOTE) {
-            if (!voiceLimiterRef.tryNoteOn(note.number, Priority::Sequencer, VoiceLimiter::StealingPolicy::Closest)) {
+            if (!voiceLimiterRef.tryNoteOn(
+                    note.number, Priority::Sequencer,
+                    VoiceLimiter::StealingPolicy::Closest)) {
               note.number = DISABLED_NOTE;
             }
           }

@@ -56,8 +56,10 @@ private:
   std::atomic<float>* arpResolutionParam;
   std::atomic<float>* euclidPatternParam;
   std::atomic<float>* euclidLegatoParam;
+  std::atomic<float>* arpTransposeParam;
 
   // seq parameters
+  std::atomic<float>* seqLengthParam;
   std::atomic<float>* seqStepEnabledParam[STEP_SEQ_MAX_LENGTH];
   std::atomic<float>* seqStepNoteParam[STEP_SEQ_MAX_LENGTH][POLYPHONY];
   std::atomic<float>* seqStepVelocityParam[STEP_SEQ_MAX_LENGTH][POLYPHONY];

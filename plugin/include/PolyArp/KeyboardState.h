@@ -2,15 +2,15 @@
 #include <juce_audio_processors/juce_audio_processors.h>  //juce::MidiMessage
 #include <algorithm>
 #include <vector>
-#include "PolyArp/Note.h"
+// TODO: remove dependency on juce::MidiMessage
 
-// note: this class is appropriating the Note struct from the sequencer but
-// using only half of the fields, maybe there is a more graceful way to do that
-
-// TODO: remove dependency on juce::MidiMessage, also use plain note number
-// instead of Note
+#define DUMMY_NOTE -1
 
 namespace Sequencer {
+
+inline bool IsDummyNote(int note) {
+  return note == -1;
+}
 
 class KeyboardState {
 public:
@@ -20,12 +20,11 @@ public:
   int getLastChannel() const { return lastChannel_; }
 
   void handleNoteOn(juce::MidiMessage noteOn) {
-    int note_number = noteOn.getNoteNumber();
+    int note_number = static_cast<int>(noteOn.getNoteNumber());
     toggleNoteOff(noteOn.getNoteNumber());
 
     if (activeNoteStack_.size() == 0) {  // first note
-      firstNote_.number = noteOn.getNoteNumber();
-      firstNote_.velocity = noteOn.getVelocity();
+      firstNote_ = static_cast<int>(noteOn.getNoteNumber());
     }
 
     activeNoteStack_.push_back(note_number);
@@ -72,49 +71,47 @@ public:
     return static_cast<int>(activeNoteStack_.size());
   }
 
-  bool isEmpty() const { return getNumNotesPressed() == 0; }
+  bool empty() const { return getNumNotesPressed() == 0; }
 
-  // APIs for arpeggiator
   const auto& getNoteStack() const { return activeNoteStack_; }
 
-  // first note is not necessarily 
-  Note getFirstNote() const { return firstNote_; }
+  int getFirstNote() const { return firstNote_; }
 
   // caller is responsible to check getNumNotesPressed() > 0
-  Note getLowestNote() const {
+  int getLowestNote() const {
     jassert(!activeNoteStack_.empty());
 
-    auto lowest =
+    auto result =
         std::min_element(activeNoteStack_.begin(), activeNoteStack_.end());
 
-    return {.number = *lowest, .velocity = noteOns_[*lowest].getVelocity()};
+    return *result;
   }
 
-  Note getHighestNote() const {
+  int getHighestNote() const {
     jassert(!activeNoteStack_.empty());
 
-    auto highest =
+    auto result =
         std::max_element(activeNoteStack_.begin(), activeNoteStack_.end());
 
-    return {.number = *highest, .velocity = noteOns_[*highest].getVelocity()};
+    return *result;
   }
 
-  Note getEarliestNote() const {
+  int getEarliestNote() const {
     jassert(!activeNoteStack_.empty());
 
-    auto earliest = activeNoteStack_.front();
-    return {.number = earliest, .velocity = noteOns_[earliest].getVelocity()};
+    auto earliest_note = activeNoteStack_.front();
+    return earliest_note;
   }
 
   // the caller is responsible to make sure stack is not empty
-  Note getLatestNote() const {
+  int getLatestNote() const {
     jassert(!activeNoteStack_.empty());
 
-    auto latest = activeNoteStack_.back();
-    return {.number = latest, .velocity = noteOns_[latest].getVelocity()};
+    auto latest_note = activeNoteStack_.back();
+    return latest_note;
   }
 
-  Note getNextNote(int noteNumber) const {
+  int getNextNote(int noteNumber) const {
     jassert(!activeNoteStack_.empty());
 
     auto it =
@@ -137,26 +134,19 @@ public:
         }
       }
 
-      if (best_note_number == DUMMY_NOTE) {
-        return Note::dummy();
-      }
-
-      return {.number = best_note_number,
-              .velocity = noteOns_[best_note_number].getVelocity()};
+      return best_note_number;
     }
 
     ++it;
     if (it == activeNoteStack_.end()) {
-      return Note::dummy();
+      return DUMMY_NOTE;
     }
 
     int nextNoteNumber = *it;
-
-    return {.number = nextNoteNumber,
-            .velocity = noteOns_[nextNoteNumber].getVelocity()};
+    return nextNoteNumber;
   }
 
-  Note getHigherNote(int noteNumber) const {
+  int getHigherNote(int noteNumber) const {
     jassert(!activeNoteStack_.empty());
 
     int best_note_number = DUMMY_NOTE;
@@ -168,15 +158,10 @@ public:
       }
     }
 
-    if (best_note_number == DUMMY_NOTE) {
-      return Note::dummy();
-    }
-
-    return {.number = best_note_number,
-            .velocity = noteOns_[best_note_number].getVelocity()};
+    return best_note_number;
   }
 
-  Note getLowerNote(int noteNumber) const {
+  int getLowerNote(int noteNumber) const {
     jassert(!activeNoteStack_.empty());
 
     int best_note_number = DUMMY_NOTE;
@@ -188,23 +173,17 @@ public:
       }
     }
 
-    if (best_note_number == DUMMY_NOTE) {
-      return Note::dummy();
-    }
-
-    return {.number = best_note_number,
-            .velocity = noteOns_[best_note_number].getVelocity()};
+    return best_note_number;
   }
 
-  Note getRandomNote() const {
+  int getRandomNote() const {
     jassert(!activeNoteStack_.empty());
 
     size_t index = static_cast<size_t>(juce::Random::getSystemRandom().nextInt(
         static_cast<int>(activeNoteStack_.size())));
     int note_number = activeNoteStack_[index];
 
-    return {.number = note_number,
-            .velocity = noteOns_[note_number].getVelocity()};
+    return note_number;
   }
 
   int getAverageVelocity() const {
@@ -221,12 +200,28 @@ public:
     return velocity_sum / static_cast<int>(activeNoteStack_.size());
   }
 
-  // getLastVelocity()?
+  // will return DEFAULT_VELOCITY if no note is being pressed
+  int getLatestVelocity() const {
+    if (getNumNotesPressed() > 0) {
+      return noteOns_[getLatestNote()].getVelocity();
+    } else {
+      return DEFAULT_VELOCITY;
+    }
+  }
+
+  // will return DEFAULT_VELOCITY for notes that are currently not pressed
+  int getVelocityForNote(int noteNumber) const {
+    if (isKeyDown(noteNumber)) {
+      return noteOns_[noteNumber].getVelocity();
+    } else {
+      return DEFAULT_VELOCITY;
+    }
+  }
 
 private:
   std::vector<int> activeNoteStack_;  // keep track of pressed notes
   juce::MidiMessage noteOns_[128];    // hold actual note on messages
-  Note firstNote_;
+  int firstNote_;
   int lastChannel_;
 };
 }  // namespace Sequencer

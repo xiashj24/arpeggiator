@@ -29,7 +29,39 @@ void FastShuffle(std::vector<T>& array, juce::Random& rng) {
   }
 }
 
+// helper to render arp note with velocity, euclid legato and transpose
+void Arpeggiator::renderArpNote(int index, int note_number) {
+  int euclid_index = index % euclidLength_;
+
+  // if (type_ == ArpType::Gacha) {
+  //   euclid_index = index % patternLength_;
+  // }
+
+  float note_length = gate_;
+
+  // euclid legato
+  if (euclidLegato_) {
+    euclid_index = (euclid_index + 1) % euclidLength_;
+    while (!euclid_simple(euclidFill_, euclidLength_, euclidRotate_,
+                          euclid_index)) {
+      note_length += 1.f;
+      euclid_index = (euclid_index + 1) % euclidLength_;
+    }
+  }
+
+  auto note = Note{.number = note_number + 12 * currentOctave_,
+                   .velocity = getArpVelocity(note_number),
+                   .length = note_length}
+                  .transposed(interval_);
+
+  renderNote(index, note);
+}
+
 void Arpeggiator::shuffleNotesWithOctave() {
+  if (keyboard_.empty()) {
+    return;
+  }
+
   shuffledNoteList_ = keyboard_.getNoteStack();
 
   auto note_list_copy = shuffledNoteList_;
@@ -39,18 +71,42 @@ void Arpeggiator::shuffleNotesWithOctave() {
       n += 12;
     }
     shuffledNoteList_.insert(shuffledNoteList_.end(), note_list_copy.begin(),
-                              note_list_copy.end());
+                             note_list_copy.end());
   }
 
   RemoveDuplicatesInVector(shuffledNoteList_);
   FastShuffle(shuffledNoteList_, juce::Random::getSystemRandom());
 }
 
-Note Arpeggiator::getAdjacentArpNote(bool repeat_boundary) {
-  auto arp_note = (rising_) ? keyboard_.getHigherNote(lastNoteNumber_)
-                            : keyboard_.getLowerNote(lastNoteNumber_);
+void Arpeggiator::generateRandomPatternWithOctave() {
+  if (keyboard_.empty()) {
+    return;
+  }
 
-  if (arp_note.isDummy()) {
+  std::vector<int> note_pool = keyboard_.getNoteStack();
+  note_pool.push_back(keyboard_.getLowestNote());    // favor lowest note
+  note_pool.push_back(keyboard_.getEarliestNote());  // favor first note
+
+  for (size_t i = 0; i < 16; ++i) {
+    int note_index = juce::Random::getSystemRandom().nextInt(
+        static_cast<int>(note_pool.size()));
+
+    notePattern_[i] = note_pool[static_cast<size_t>(note_index)];
+
+    int octave = 0;
+    // if (juce::Random::getSystemRandom().nextBool()) {
+    octave = juce::Random::getSystemRandom().nextInt(octave_);
+    // }
+
+    octavePattern_[i] = octave;
+  }
+}
+
+int Arpeggiator::getAdjacentArpNote(bool repeat_boundary) {
+  auto arp_note = (rising_) ? keyboard_.getHigherNote(lastNote_)
+                            : keyboard_.getLowerNote(lastNote_);
+
+  if (IsDummyNote(arp_note)) {
     // reverse direction if hit boundary
     if (rising_ && currentOctave_ == octave_ - 1) {
       rising_ = false;
@@ -66,15 +122,15 @@ Note Arpeggiator::getAdjacentArpNote(bool repeat_boundary) {
 
     // try again
     if (rising_) {
-      arp_note = keyboard_.getHigherNote(lastNoteNumber_);
+      arp_note = keyboard_.getHigherNote(lastNote_);
 
-      if (arp_note.isDummy()) {
+      if (IsDummyNote(arp_note)) {
         arp_note = keyboard_.getLowestNote();
         currentOctave_ = (currentOctave_ + 1) % octave_;
       }
     } else {
-      arp_note = keyboard_.getLowerNote(lastNoteNumber_);
-      if (arp_note.isDummy()) {
+      arp_note = keyboard_.getLowerNote(lastNote_);
+      if (IsDummyNote(arp_note)) {
         arp_note = keyboard_.getHighestNote();
         currentOctave_ = positive_modulo(currentOctave_ - 1, octave_);
       }
@@ -87,24 +143,17 @@ void Arpeggiator::renderStep(int index) {
   int num_notes_pressed = keyboard_.getNumNotesPressed();
   jassert(num_notes_pressed >= 1);  // otherwise there is nothing to play
 
-  // check euclid
+  // euclid (rest)
   int euclid_index = index % euclidLength_;
-  if (!euclid_simple(euclidFill_, euclidLength_, euclidRotate_,
-                     euclid_index))
+
+  // if (type_ == ArpType::Gacha) {
+  //   euclid_index = index % patternLength_;
+  // }
+
+  if (!euclid_simple(euclidFill_, euclidLength_, euclidRotate_, euclid_index))
     return;
 
-  float note_length = gate_;
-  // euclid legato
-  if (euclidLegato_) {
-    euclid_index = (euclid_index + 1) % euclidLength_;
-    while (!euclid_simple(euclidFill_, euclidLength_, euclidRotate_,
-                          euclid_index)) {
-      note_length += 1.f;
-      euclid_index = (euclid_index + 1) % euclidLength_;
-    }
-  }
-
-  Note arp_note;
+  int arp_note;
   bool repeat_boundary = false;
 
   switch (type_) {
@@ -114,9 +163,9 @@ void Arpeggiator::renderStep(int index) {
         arp_note = keyboard_.getEarliestNote();
         currentOctave_ = 0;
       } else {
-        arp_note = keyboard_.getNextNote(lastNoteNumber_);
+        arp_note = keyboard_.getNextNote(lastNote_);
 
-        if (arp_note.isDummy()) {
+        if (IsDummyNote(arp_note)) {
           arp_note = keyboard_.getEarliestNote();
           currentOctave_ = (currentOctave_ + 1) % octave_;
         }
@@ -129,8 +178,8 @@ void Arpeggiator::renderStep(int index) {
         arp_note = keyboard_.getLowestNote();
         currentOctave_ = 0;
       } else {
-        arp_note = keyboard_.getHigherNote(lastNoteNumber_);
-        if (arp_note.isDummy()) {
+        arp_note = keyboard_.getHigherNote(lastNote_);
+        if (IsDummyNote(arp_note)) {
           arp_note = keyboard_.getLowestNote();
           currentOctave_ = (currentOctave_ + 1) % octave_;
         }
@@ -142,9 +191,9 @@ void Arpeggiator::renderStep(int index) {
         arp_note = keyboard_.getHighestNote();
         currentOctave_ = octave_ - 1;
       } else {
-        arp_note = keyboard_.getLowerNote(lastNoteNumber_);
+        arp_note = keyboard_.getLowerNote(lastNote_);
 
-        if (arp_note.isDummy()) {
+        if (IsDummyNote(arp_note)) {
           arp_note = keyboard_.getHighestNote();
           currentOctave_ = positive_modulo(currentOctave_ - 1, octave_);
         }
@@ -190,11 +239,10 @@ void Arpeggiator::renderStep(int index) {
       // re-shuffle on every loop start
       if (index % (num_notes_pressed * octave_) == 0) {
         shuffleNotesWithOctave();
-        // TODO: reshuffle untile shuffled_note_list[0] != last_note_number
+        // TODO: reshuffle until shuffled_note_list[0] != last_note_number
       }
-      arp_note.number = shuffledNoteList_[static_cast<size_t>(
+      arp_note = shuffledNoteList_[static_cast<size_t>(
           index % (num_notes_pressed * octave_))];
-      arp_note.velocity = keyboard_.getAverageVelocity();
       break;
 
     case ArpType::Walk:
@@ -202,14 +250,14 @@ void Arpeggiator::renderStep(int index) {
         arp_note = keyboard_.getRandomNote();
         currentOctave_ = juce::Random::getSystemRandom().nextInt(octave_);
       } else if (juce::Random::getSystemRandom().nextBool()) {
-        arp_note = keyboard_.getHigherNote(lastNoteNumber_);
-        if (arp_note.isDummy()) {
+        arp_note = keyboard_.getHigherNote(lastNote_);
+        if (IsDummyNote(arp_note)) {
           arp_note = keyboard_.getLowestNote();
           currentOctave_ = (currentOctave_ + 1) % octave_;
         }
       } else {
-        arp_note = keyboard_.getLowerNote(lastNoteNumber_);
-        if (arp_note.isDummy()) {
+        arp_note = keyboard_.getLowerNote(lastNote_);
+        if (IsDummyNote(arp_note)) {
           arp_note = keyboard_.getHighestNote();
           currentOctave_ = positive_modulo(currentOctave_ - 1, octave_);
         }
@@ -223,11 +271,8 @@ void Arpeggiator::renderStep(int index) {
         shuffleNotesWithOctave();
 
         for (size_t i = 0; i < 3; ++i) {
-          arp_note.number = shuffledNoteList_[i];
-          arp_note.length = note_length;
-          arp_note.velocity = keyboard_.getAverageVelocity();
-
-          renderNote(index, arp_note);
+          arp_note = shuffledNoteList_[i];
+          renderArpNote(index, arp_note);
         }
         return;
       } else
@@ -242,11 +287,8 @@ void Arpeggiator::renderStep(int index) {
         shuffleNotesWithOctave();
 
         for (size_t i = 0; i < 2; ++i) {
-          arp_note.number = shuffledNoteList_[i];
-          arp_note.length = note_length;
-          arp_note.velocity = keyboard_.getAverageVelocity();
-
-          renderNote(index, arp_note);
+          arp_note = shuffledNoteList_[i];
+          renderArpNote(index, arp_note);
         }
         DBG("index: " << index << " random 2/3 mode");
         return;
@@ -254,26 +296,44 @@ void Arpeggiator::renderStep(int index) {
       break;
 
     case ArpType::Chord:
-      for (int n : shuffledNoteList_) {
-        arp_note.number = n;
-        arp_note.length = note_length;
-        arp_note.velocity = keyboard_.getAverageVelocity();
+      if (index == 0) {
+        shuffleNotesWithOctave();
+        currentOctave_ = 0;
+      }
 
-        renderNote(index, arp_note);
+      for (int note : shuffledNoteList_) {
+        arp_note = note;
+        renderArpNote(index, arp_note);
       }
       DBG("index: " << index << " chord");
       return;
       break;
+
+    case ArpType::Gacha:
+      if (index == 0) {
+        currentOctave_ = 0;
+      }
+
+      size_t pattern_index = static_cast<size_t>((index % patternLength_));
+
+      int note = notePattern_[pattern_index];
+
+      if (note < 0) {
+        return;  // skip
+      }
+      int octave = octavePattern_[pattern_index];
+      if (octave >= octave_) {
+        octave = 0;
+      }
+
+      arp_note = note + 12 * octave;
+      break;
   }
 
-  lastNoteNumber_ = arp_note.number;
-  arp_note.number += 12 * currentOctave_;
-  arp_note.length = note_length;
-  // wrap to the same note below 128
-  arp_note.number = WrapNoteIntoValidRange(arp_note.number);
+  lastNote_ = arp_note;
 
-  renderNote(index, arp_note);
-  DBG("index: " << index << " note: " << arp_note.number);
+  renderArpNote(index, arp_note);
+  DBG("index: " << index << " note: " << arp_note);
 }
 
 // MARK: euclid

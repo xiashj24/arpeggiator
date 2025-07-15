@@ -19,15 +19,25 @@ class VoiceLimiter {
 public:
   enum class StealingPolicy { LRU, Closest };
 
-  VoiceLimiter(size_t numVoices) : numVoices_{numVoices} {}
+  VoiceLimiter(size_t numVoices)
+      : numVoices_{numVoices}, numVoicesCached_{numVoices} {}
 
   // Caveat: when setNumVoices reduces polyphony (e.g. 10 -> 5)
-  // note offs will not properly be issued, the caller is responsible to
+  // note offs will not be properly be issued, the caller is responsible to
   // note off those voices
   // TODO: specify rules for which voices are discarded (e.g. higher indexed
   // ones)
   void setNumVoices(size_t numVoices) { numVoices_ = numVoices; }
   size_t getNumVoices() const { return numVoices_; }
+
+  void setBypass(bool enabled) {
+    if (enabled) {
+      numVoicesCached_ = numVoices_;
+      numVoices_ = 127;
+    } else {
+      numVoices_ = numVoicesCached_;
+    }
+  }
 
   bool tryNoteOn(int noteNumber,
                  Priority priority,
@@ -158,5 +168,6 @@ private:
   // TODO: refactor using RingBuffer (use std::array to minimize allocation)
   std::deque<Voice> lru_;  // front is least-recently used
   size_t numVoices_;
+  size_t numVoicesCached_;
 };
 }  // namespace Sequencer

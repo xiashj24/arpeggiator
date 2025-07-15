@@ -1,9 +1,9 @@
 #pragma once
 
 // TODO: make these constexpr
-#define DEFAULT_NOTE 60  // C3
-#define DUMMY_NOTE -1
-#define DISABLED_NOTE 20  // note: -1?
+// TODO: make sure the sequencer clamp incoming notes lower than 21 to 21
+#define DEFAULT_NOTE 60   // C3
+#define DISABLED_NOTE 20  // or use -1?
 #define MIN_NOTE (DISABLED_NOTE + 1)
 #define MAX_NOTE 127
 #define DEFAULT_VELOCITY 100  // 1..127 since 0 is the same as NoteOff
@@ -33,13 +33,9 @@ struct Note {
   void reset() {
     number = DISABLED_NOTE;
     velocity = DEFAULT_VELOCITY;
-    offset = 0.f;  // relative the step index
+    offset = 0.f;
     length = DEFAULT_LENGTH;
   }
-
-  static Note dummy() { return {.number = DUMMY_NOTE}; }
-
-  bool isDummy() const { return number == DUMMY_NOTE; }
 
   Note transposed(int semitones) const {
     Note result = *this;

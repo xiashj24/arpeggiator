@@ -189,32 +189,30 @@ public:
     }
 
     // book keeping
-    bool is_first_note =
-        (keyboard_.getFirstNote().number == noteOff.getNoteNumber());
-    bool is_last_note =
-        (keyboard_.getLatestNote().number == noteOff.getNoteNumber());
+    bool is_first_note = (keyboard_.getFirstNote() == noteOff.getNoteNumber());
+    bool is_last_note = (keyboard_.getLatestNote() == noteOff.getNoteNumber());
     auto matched_note_on = keyboard_.handleNoteOff(noteOff);
 
-    bool note_muted = false;
+    // bool note_muted = false;
 
     // MARK: note off
     if (sequencerKeyTrigger_) {
       if (keytriggerMode_ == KeytriggerMode::FirstKey) {
         if (is_first_note) {
           stopSequencer();
-          note_muted = true;
+          // note_muted = true;
         }
       } else if (keytriggerMode_ == KeytriggerMode::LastKey) {
         updateTransposeInterval();
         if (is_last_note) {
           stopSequencer();
-          note_muted = true;
+          // note_muted = true;
         }
       } else {  // transpose
         updateTransposeInterval();
-        if (keyboard_.isEmpty()) {  // all notes off
+        if (keyboard_.empty()) {  // all notes off
           stopSequencer();
-          note_muted = true;
+          // note_muted = true;
         }
       }
     }
@@ -232,15 +230,14 @@ public:
       notifyProcessorSeqUpdate(step_index, step);
     }
 
-    if (!note_muted) {
-      sendMidiMessageToVoiceLimiter(noteOff, Priority::Keyboard);
-    }
+    // if (!note_muted) {
+    sendMidiMessageToVoiceLimiter(noteOff, Priority::Keyboard);
+    // }
   }
 
   void setArp(bool enabled) {
     arpOn_ = enabled;
-
-    // TODO: disable note limit when arp enabled
+    voiceLimiter_.setBypass(enabled);  // bypass note limiter if arp on
 
     // transform held notes into arpeggio on rising edge
     if (arpOn_) {
@@ -330,13 +327,17 @@ private:
   // 0.0 (no swing) .. 1.0 (maximum swing)
   bool isOnStrongBeat() const {
     // TODO: rework this function to take into consideration both arp and seq
-    return sequencer_.isOnOddStep();
+    if (sequencerIsTicking_) {
+      return sequencer_.isOnOddStep();
+    } else {
+      return arpeggiator_.isOnOddStep();
+    }
   }
 
   // warning: be careful when you call this function!
   // must be called after keyboard book-keeping and startSequencer
   void updateTransposeInterval() {
-    if (keyboard_.isEmpty()) {
+    if (keyboard_.empty()) {
       sequencer_.setTransposeInterval(0);
     } else {
       switch (keytriggerMode_) {
@@ -344,15 +345,15 @@ private:
           [[fallthrough]];
 
         case KeytriggerMode::Transpose:
-          if (!keyboard_.isEmpty()) {
-            sequencer_.setTransposeInterval(keyboard_.getLatestNote().number -
+          if (!keyboard_.empty()) {
+            sequencer_.setTransposeInterval(keyboard_.getLatestNote() -
                                             sequencer_.getRootNoteNumber());
           }
           break;
 
         case KeytriggerMode::FirstKey:
-          if (!keyboard_.isEmpty()) {
-            sequencer_.setTransposeInterval(keyboard_.getEarliestNote().number -
+          if (!keyboard_.empty()) {
+            sequencer_.setTransposeInterval(keyboard_.getEarliestNote() -
                                             sequencer_.getRootNoteNumber());
           }
           break;
@@ -407,7 +408,8 @@ private:
   void sendMidiMessageToVoiceLimiter(
       juce::MidiMessage message,
       Priority prority,
-      VoiceLimiter::StealingPolicy policy = VoiceLimiter::StealingPolicy::Closest) {
+      VoiceLimiter::StealingPolicy policy =
+          VoiceLimiter::StealingPolicy::Closest) {
     if (message.isNoteOn()) {
       auto& note_on = message;
       int stolen_note = DUMMY_NOTE;

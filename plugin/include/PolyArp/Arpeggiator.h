@@ -22,6 +22,14 @@ public:
     RandomTwo,
     RandomThree,
     Chord,
+    Gacha,
+  };
+
+  enum class VelocityMode {
+    Manual,
+    Average,
+    Last,
+    Fixed,
   };
 
   enum class EuclidPattern {
@@ -103,25 +111,40 @@ public:
         type_(type),
         gate_(gate),
         octave_(octave),
-        lastNoteNumber_(DUMMY_NOTE),
-        rising_(true),
+        velocityMode_(VelocityMode::Manual),
+        fixedVelocity_(DEFAULT_VELOCITY),
         euclidLegato_(false),
-        currentOctave_(0) {
-    shuffledNoteList_.reserve(128);
+        patternLength_(16),
+        currentOctave_(0),
+        interval_(0),
+        lastNote_(DUMMY_NOTE),
+        rising_(true) {
     stop();
+    shuffledNoteList_.reserve(128);
+    setFixedVelocity(100);
   }
 
   void setType(ArpType type) { type_ = type; }
 
   void setEuclidPattern(EuclidPattern pattern);
 
-  void setOctave(int octave) { octave_ = octave; }
+  void setOctave(int octave) {
+    if (octave_ != octave) {
+      octave_ = octave;
+      shuffleNotesWithOctave();
+      // generateRandomPatternWithOctave();
+    }
+  }
 
   void setGate(float gate) { gate_ = gate; }
+
+  void setVelocityMode(VelocityMode mode) { velocityMode_ = mode; }
+  void setFixedVelocity(int velocity) { fixedVelocity_ = velocity; }
 
   void handleNoteOn(juce::MidiMessage noteOn) {
     keyboard_.handleNoteOn(noteOn);
     shuffleNotesWithOctave();
+    generateRandomPatternWithOctave();
   }
 
   void handleNoteOff(juce::MidiMessage noteOff) {
@@ -131,11 +154,13 @@ public:
       stop();
     } else {
       shuffleNotesWithOctave();
+      // removeNoteFromPattern(noteOff.getNoteNumber());
+      generateRandomPatternWithOctave();
     }
   }
 
+  // mute but keep ticking to recall note off
   // note: calling this function has no effect if arp is not running
-  // mute but still ticking to recall note off
   void stop(bool immediateNoteOff = false) {
     keyboard_.reset();
 
@@ -158,6 +183,14 @@ public:
     }
   }
 
+  void setTransposeInterval(int semitones) { interval_ = semitones; }
+
+  void setPatternLength(int length) {
+    length = std::clamp(length, 1, 16);
+
+    patternLength_ = length;
+  }
+
   // bool isRunning() const { return isMuted(); }
 
 private:
@@ -165,9 +198,28 @@ private:
   ArpType type_;
   float gate_;
   int octave_;
-  int lastNoteNumber_;
+  VelocityMode velocityMode_;
+  int fixedVelocity_;
 
-  bool rising_;
+  int getArpVelocity(int note) const {
+    switch (velocityMode_) {
+      case VelocityMode::Manual:
+        return keyboard_.getVelocityForNote(note);
+        break;
+      case VelocityMode::Average:
+        return keyboard_.getAverageVelocity();
+        break;
+      case VelocityMode::Last:
+        return keyboard_.getLatestVelocity();
+        break;
+      case VelocityMode::Fixed:
+        return fixedVelocity_;
+        break;
+      default:
+        return DEFAULT_VELOCITY;  // should not happen
+        break;
+    }
+  }
 
   // euclidean rhythm generator
   int euclidFill_;  // pulses
@@ -177,15 +229,33 @@ private:
 
   // implementation
   std::vector<int> shuffledNoteList_;  // optimize: minimize reallocation
+  std::array<int, 16> notePattern_;
+  std::array<int, 16> octavePattern_;
+  int patternLength_;
   int currentOctave_;
+  int interval_;
+  int lastNote_;
+  bool rising_;
 
   void shuffleNotesWithOctave();
 
-  Note getAdjacentArpNote(bool rise);
+  void generateRandomPatternWithOctave();
+
+  // void removeNoteFromPattern(int note) {
+  //   for (auto& n : notePattern_) {
+  //     if (n == note) {
+  //       n = DUMMY_NOTE;
+  //     }
+  //   }
+  // }
+
+  int getAdjacentArpNote(bool repeat_boundary);
 
   int getStepRenderTick(int index) const override final {
     return index * getTicksPerStep();  // render on beat
   }
+
+  void renderArpNote(int index, int note_number);
 
   void renderStep(int index) override final;
 };
