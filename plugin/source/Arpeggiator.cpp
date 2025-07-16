@@ -95,7 +95,7 @@ void Arpeggiator::generateRandomPatternWithOctave() {
 
     int octave = 0;
     // if (juce::Random::getSystemRandom().nextBool()) {
-    octave = juce::Random::getSystemRandom().nextInt(octave_);
+    octave = juce::Random::getSystemRandom().nextInt(4);
     // }
 
     octavePattern_[i] = octave;
@@ -153,7 +153,7 @@ void Arpeggiator::renderStep(int index) {
   if (!euclid_simple(euclidFill_, euclidLength_, euclidRotate_, euclid_index))
     return;
 
-  int arp_note;
+  int arp_note = DUMMY_NOTE;
   bool repeat_boundary = false;
 
   switch (type_) {
@@ -318,9 +318,6 @@ void Arpeggiator::renderStep(int index) {
 
       int note = notePattern_[pattern_index];
 
-      if (note < 0) {
-        return;  // skip
-      }
       int octave = octavePattern_[pattern_index];
       if (octave >= octave_) {
         octave = 0;
